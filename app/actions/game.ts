@@ -2,46 +2,120 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { Database } from '@/types/supabase'
 import { createAdminClient } from '@/lib/supabase/admin'
+import {
+    ATTENDANCE_COIN_REWARD,
+    DAILY_GAME_COIN_LIMIT,
+    DAILY_TOTAL_COIN_LIMIT,
+    GAME_REWARD_RULE,
+    isRankingEligibleReason,
+} from '@/app/constants/economy'
 
-const DAILY_COIN_LIMIT = 300;
+type SaveResultMetadata = {
+    correctCount?: number;
+    totalQuestions?: number;
+    isPerfect?: boolean;
+    didClear?: boolean;
+    minimumReward?: number;
+};
 
 export async function getDailyCoinProgress() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { current: 0, limit: DAILY_COIN_LIMIT };
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    if (!user) return { current: 0, limit: DAILY_TOTAL_COIN_LIMIT };
+    const todayIso = getKSTMidnightIso();
 
     const { data: transactions, error } = await supabase
         .from('coin_transactions')
-        .select('amount')
+        .select('amount, reason')
         .eq('user_id', user.id)
-        .ilike('reason', 'GAME_REWARD:%')
-        .gte('created_at', today.toISOString());
+        .gt('amount', 0)
+        .gte('created_at', todayIso);
 
     if (error) {
         console.error("Error fetching daily coin progress:", error);
-        return { current: 0, limit: DAILY_COIN_LIMIT };
+        return { current: 0, limit: DAILY_TOTAL_COIN_LIMIT };
     }
 
-    const currentCoins = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0);
-    return { current: currentCoins, limit: DAILY_COIN_LIMIT };
+    const currentCoins = (transactions || []).reduce((sum, tx) => {
+        const isGameReward = tx.reason?.startsWith('GAME_REWARD:');
+        const isAttendance = tx.reason === 'ATTENDANCE';
+        if (!isGameReward && !isAttendance) return sum;
+        return sum + (tx.amount || 0);
+    }, 0);
+
+    return { current: currentCoins, limit: DAILY_TOTAL_COIN_LIMIT };
+}
+
+function calculateGameReward(score: number, metadata?: SaveResultMetadata) {
+    let potentialReward = 0;
+
+    // A. Knowledge reward: capped to prevent single-round spikes.
+    if (metadata && typeof metadata.correctCount === 'number') {
+        potentialReward += Math.min(
+            GAME_REWARD_RULE.maxCorrectReward,
+            metadata.correctCount * GAME_REWARD_RULE.correctCoinPerAnswer
+        );
+    }
+
+    // B. Performance reward: slower conversion and capped.
+    const scoreReward = Math.min(
+        GAME_REWARD_RULE.maxScoreReward,
+        Math.floor(score / GAME_REWARD_RULE.scorePerCoin)
+    );
+    potentialReward += scoreReward;
+
+    // C. Mastery reward.
+    if (metadata?.isPerfect) {
+        potentialReward += GAME_REWARD_RULE.perfectBonus;
+    }
+
+    // D. Hard cap per run.
+    return Math.min(GAME_REWARD_RULE.maxPerGameReward, potentialReward);
+}
+
+function applyGameSpecificMinimumReward(
+    gameId: string,
+    score: number,
+    playTime: number,
+    metadata: SaveResultMetadata | undefined,
+    baseReward: number
+) {
+    // Word Defense: even on failure, grant a tiny consolation reward for meaningful participation.
+    if (gameId === 'word-runner' && metadata?.didClear === false) {
+        const participatedEnough =
+            (metadata.correctCount || 0) > 0 ||
+            (metadata.totalQuestions || 0) >= 3 ||
+            playTime >= 40 ||
+            score >= 200;
+
+        if (participatedEnough) {
+            const minimumReward = Math.max(0, Math.min(5, metadata.minimumReward || 3));
+            return Math.max(baseReward, minimumReward);
+        }
+    }
+
+    return baseReward;
+}
+
+function resolveActualReward(todayTotal: number, potentialReward: number, dailyLimit: number) {
+    if (todayTotal >= dailyLimit) {
+        return { actualReward: 0, limitReached: true };
+    } else if (todayTotal + potentialReward > dailyLimit) {
+        return { actualReward: dailyLimit - todayTotal, limitReached: true };
+    } else {
+        return { actualReward: potentialReward, limitReached: false };
+    }
 }
 
 export async function saveGameResult(
     gameId: string,
     score: number,
     playTime: number,
-    metadata?: {
-        correctCount?: number;
-        totalQuestions?: number;
-        isPerfect?: boolean;
-    }
+    metadata?: SaveResultMetadata
 ) {
-    const supabase = await createClient() as any;
+    const supabase = await createClient();
+    const adminClient = createAdminClient();
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -49,44 +123,31 @@ export async function saveGameResult(
     }
 
     try {
-        // 1. Get current daily progress
-        const { current: todayTotal } = await getDailyCoinProgress();
+        // 1. Get current daily game-reward progress (attendance is excluded from game cap).
+        const todayIso = getKSTMidnightIso();
+        const { data: gameRewardTransactions, error: gameRewardError } = await adminClient
+            .from('coin_transactions')
+            .select('amount')
+            .eq('user_id', user.id)
+            .ilike('reason', 'GAME_REWARD:%')
+            .gte('created_at', todayIso);
+
+        if (gameRewardError) throw gameRewardError;
+        const rewardTransactions = (gameRewardTransactions ?? []) as Array<{ amount: number | null }>;
+        const todayTotal = rewardTransactions.reduce(
+            (sum: number, tx: { amount: number | null }) => sum + (tx.amount ?? 0),
+            0,
+        );
 
         // 2. Calculate Potential Reward
-        // New Balanced System for 300 Daily Limit
-        let potentialReward = 0;
+        const baseReward = calculateGameReward(score, metadata);
+        const potentialReward = applyGameSpecificMinimumReward(gameId, score, playTime, metadata, baseReward);
 
-        // A. Knowledge Reward: 3 coins per correct answer
-        if (metadata && typeof metadata.correctCount === 'number') {
-            potentialReward += metadata.correctCount * 3;
-        }
-
-        // B. Performance Reward: 1 coin per 50 points (Max 50 coins per game)
-        // Recognizes running distance/speed/combo
-        const scoreReward = Math.min(50, Math.floor(score / 50));
-        potentialReward += scoreReward;
-
-        // C. Mastery Reward: Perfect Clear Bonus
-        if (metadata?.isPerfect) {
-            potentialReward += 30;
-        }
-
-        // 3. Apply Daily Limit (200)
-        let actualReward = 0;
-        let limitReached = false;
-
-        if (todayTotal >= DAILY_COIN_LIMIT) {
-            actualReward = 0;
-            limitReached = true;
-        } else if (todayTotal + potentialReward > DAILY_COIN_LIMIT) {
-            actualReward = DAILY_COIN_LIMIT - todayTotal;
-            limitReached = true;
-        } else {
-            actualReward = potentialReward;
-        }
+        // 3. Apply Daily Limit
+        const { actualReward, limitReached } = resolveActualReward(todayTotal, potentialReward, DAILY_GAME_COIN_LIMIT);
 
         // 4. Insert Game Log
-        const { data: gameLog, error: logError } = await supabase
+        const { data: gameLog, error: logError } = await adminClient
             .from('game_logs')
             .insert({
                 user_id: user.id,
@@ -102,7 +163,7 @@ export async function saveGameResult(
 
         // 5. Grant Reward if any
         if (actualReward > 0) {
-            const { error: txError } = await supabase
+            const { error: txError } = await adminClient
                 .from('coin_transactions')
                 .insert({
                     user_id: user.id,
@@ -113,29 +174,12 @@ export async function saveGameResult(
 
             if (txError) throw txError;
 
-            await supabase.rpc('increment_coin_balance', {
+            const { error: balanceError } = await adminClient.rpc('increment_coin_balance', {
                 user_id_arg: user.id,
                 amount_arg: actualReward
             });
-        }
 
-        // 6. Check for "Effort King" Badge (Played 5 games with 0 reward today)
-        if (limitReached) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            // Count games today after limit reached (reward = 0)
-            const { count: zeroRewardGames } = await supabase
-                .from('game_logs')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', user.id)
-                .gte('created_at', today.toISOString())
-            // This is a bit tricky: we need logs that don't have a coin_transaction or have a small one that completed the 200.
-            // For simplicity, let's just count all logs today and subtract logs that have non-zero coin transactions.
-            // But a simpler way is to check the count of logs today.
-
-            // We'll rely on getStudentStatsData to calculate this badge on view for now, 
-            // but we can trigger a check here if needed.
+            if (balanceError) throw balanceError;
         }
 
         revalidatePath('/student/dashboard');
@@ -144,7 +188,7 @@ export async function saveGameResult(
             success: true,
             coinsEarned: actualReward,
             dailyCoinsTotal: todayTotal + actualReward,
-            dailyLimit: DAILY_COIN_LIMIT,
+            dailyLimit: DAILY_GAME_COIN_LIMIT,
             isLimitReached: limitReached
         };
 
@@ -242,66 +286,61 @@ export async function getStudentDashboardData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
-    // Fetch profile
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+    // Parallel fetch for independent data
+    const [
+        { data: profile },
+        { data: activities },
+        { data: scoreData },
+        { data: coinData },
+        { count: attendanceCount },
+        { data: titleData }
+    ] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('game_logs').select('*, coin_transactions!coin_transactions_reference_id_fkey(amount)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(3),
+        supabase.from('game_logs').select('score').eq('user_id', user.id),
+        supabase.from('coin_transactions').select('amount').eq('user_id', user.id).gt('amount', 0),
+        supabase.from('coin_transactions').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('reason', 'ATTENDANCE'),
+        adminClient.from('student_items').select('item_name').eq('user_id', user.id).eq('item_id', 'EQUIPPED_TITLE_SLOT').single()
+    ])
 
-    // Fetch recent logs with transactions
-    const { data: activities } = await supabase
-        .from('game_logs')
-        .select('*, coin_transactions!coin_transactions_reference_id_fkey(amount)')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(3)
+    // Fetch rank (depends on profile)
+    let rankCount = 0;
+    if (profile) {
+        const { data: classmates } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('grade', profile.grade || 0)
+            .eq('class', profile.class || 0)
+            .eq('role', 'student');
 
-    // Get rank (simplified)
-    const { count: rankCount } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('grade', profile?.grade || 0)
-        .eq('class', profile?.class || 0)
-        .eq('role', 'student')
-        .gt('coin_balance', profile?.coin_balance || 0)
+        const classmateIds = (classmates || []).map((p) => p.id);
+        if (classmateIds.length > 0) {
+            const { data: classTransactions } = await adminClient
+                .from('coin_transactions')
+                .select('user_id, amount, reason')
+                .in('user_id', classmateIds)
+                .gt('amount', 0);
 
-    // Get cumulative stats
-    const { data: scoreData } = await supabase
-        .from('game_logs')
-        .select('score')
-        .eq('user_id', user.id)
+            const pointsMap: Record<string, number> = {};
+            classTransactions
+                ?.filter((tx) => isRankingEligibleReason(tx.reason))
+                .forEach((tx) => {
+                    pointsMap[tx.user_id] = (pointsMap[tx.user_id] || 0) + (tx.amount || 0);
+                });
+
+            const myPoints = pointsMap[user.id] || 0;
+            rankCount = classmateIds.filter((id) => (pointsMap[id] || 0) > myPoints).length;
+        }
+    }
 
     const totalScore = scoreData?.reduce((acc, log) => acc + (log.score || 0), 0) || 0
     const totalGamesPlayed = scoreData?.length || 0
-
-    const { data: coinData } = await supabase
-        .from('coin_transactions')
-        .select('amount')
-        .eq('user_id', user.id)
-        .gt('amount', 0)
-
     const totalCoinsEarned = coinData?.reduce((acc, tx) => acc + (tx.amount || 0), 0) || 0
-
-    // Get attendance days
-    const { count: attendanceCount } = await supabase
-        .from('coin_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('reason', 'ATTENDANCE')
-
-    // Get equipped title
-    const { data: titleData } = await adminClient
-        .from('student_items')
-        .select('item_name')
-        .eq('user_id', user.id)
-        .eq('item_id', 'EQUIPPED_TITLE_SLOT')
-        .single()
 
     return {
         profile,
         activities: activities || [],
-        rank: (rankCount || 0) + 1,
+        rank: rankCount + 1,
         totalScore,
         totalCoinsEarned,
         totalGamesPlayed,
@@ -362,7 +401,7 @@ export async function performAttendance() {
     const { canAttend } = await checkAttendance()
     if (!canAttend) return { success: false, error: '이미 오늘 출석 체크를 하셨습니다!' }
 
-    const COIN_REWARD = 50
+    const COIN_REWARD = ATTENDANCE_COIN_REWARD
 
     try {
         // 1. Record Transaction (Use Admin Client to bypass RLS)

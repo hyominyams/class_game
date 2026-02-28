@@ -1,11 +1,39 @@
 'use server'
 
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import { requireActor } from "@/app/actions/security/guards";
+
+function normalizeAdminCoinReason(reason: string, amount: number) {
+    const trimmedReason = reason.trim() || 'manual-adjustment';
+    if (
+        trimmedReason.startsWith('ADMIN_GRANT:')
+        || trimmedReason.startsWith('ADMIN_REVOKE:')
+    ) {
+        return trimmedReason;
+    }
+
+    return amount >= 0 ? `ADMIN_GRANT:${trimmedReason}` : `ADMIN_REVOKE:${trimmedReason}`;
+}
 
 export async function updateStudentCoin(studentId: string, amount: number, reason: string) {
+    const actorResult = await requireActor(["admin"]);
+    if (!actorResult.ok) {
+        return { error: actorResult.error, status: actorResult.status };
+    }
+
     const supabaseAdmin = createAdminClient();
+    const normalizedReason = normalizeAdminCoinReason(reason, amount);
+
+    const { data: studentProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', studentId)
+        .single();
+
+    if (!studentProfile || studentProfile.role !== 'student') {
+        return { error: 'Only student accounts can receive this adjustment.' };
+    }
 
     // 1. Update Balance via RPC
     const { error: rpcError } = await supabaseAdmin.rpc('increment_coin_balance', {
@@ -29,7 +57,7 @@ export async function updateStudentCoin(studentId: string, amount: number, reaso
         .insert({
             user_id: studentId,
             amount: amount,
-            reason: reason,
+            reason: normalizedReason,
             type: amount > 0 ? 'admin_grant' : 'admin_revoke'
         });
 
@@ -43,7 +71,22 @@ export async function updateStudentCoin(studentId: string, amount: number, reaso
 }
 
 export async function deleteStudentAccount(studentId: string) {
+    const actorResult = await requireActor(["admin"]);
+    if (!actorResult.ok) {
+        return { error: actorResult.error, status: actorResult.status };
+    }
+
     const supabaseAdmin = createAdminClient();
+
+    const { data: studentProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', studentId)
+        .single();
+
+    if (!studentProfile || studentProfile.role !== 'student') {
+        return { error: 'Only student accounts can be deleted here.' };
+    }
 
     // 1. Delete User from Auth (This usually cascades if set up, but let's be safe)
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(studentId);

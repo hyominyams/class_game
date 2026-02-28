@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { PixelButton } from "@/components/ui/pixel-button";
 import { checkAttendance, performAttendance } from "@/app/actions/game";
 import { toast } from "sonner";
+import { ATTENDANCE_COIN_REWARD } from "@/app/constants/economy";
 
 export function AttendanceButton() {
     const [canAttend, setCanAttend] = useState<boolean | null>(null);
@@ -24,10 +25,11 @@ export function AttendanceButton() {
             if (result.success) {
                 setCanAttend(false);
                 toast.success(result.message);
+                window.dispatchEvent(new Event("daily-coin-progress-refresh"));
             } else {
                 toast.error(result.error);
             }
-        } catch (error) {
+        } catch {
             toast.error("출석 체크 중 오류가 발생했습니다.");
         } finally {
             setIsPending(false);
@@ -44,7 +46,7 @@ export function AttendanceButton() {
             </div>
             {canAttend ? (
                 <div className="text-center space-y-2">
-                    <p className="text-sm text-gray-500 font-bold">출석 보상으로 50코인을 받으세요!</p>
+                    <p className="text-sm text-gray-500 font-bold">출석 보상으로 {ATTENDANCE_COIN_REWARD}코인을 받으세요!</p>
                     <PixelButton
                         onClick={handleAttend}
                         disabled={isPending}

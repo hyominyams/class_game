@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getTournamentRankings } from "@/app/actions/tournament";
-import { Loader2, Trophy } from "lucide-react";
+import { Trophy } from "lucide-react";
 
 interface Ranking {
     rank: number;
@@ -21,14 +21,16 @@ interface TournamentRankingModalProps {
 
 export function TournamentRankingModal({ isOpen, onClose, tournamentId, title }: TournamentRankingModalProps) {
     const [rankings, setRankings] = useState<Ranking[]>([]);
-    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (isOpen && tournamentId) {
-            setLoading(true);
             getTournamentRankings(tournamentId).then(data => {
-                setRankings(data);
-                setLoading(false);
+                setRankings(
+                    data.map((item) => ({
+                        ...item,
+                        score: item.score ?? 0,
+                    }))
+                );
             });
         }
     }, [isOpen, tournamentId]);
@@ -43,11 +45,7 @@ export function TournamentRankingModal({ isOpen, onClose, tournamentId, title }:
                     </DialogTitle>
                 </DialogHeader>
                 <div className="max-h-[60vh] overflow-y-auto pr-2">
-                    {loading ? (
-                        <div className="flex justify-center p-8">
-                            <Loader2 className="h-8 w-8 animate-spin text-[#00b894]" />
-                        </div>
-                    ) : rankings.length === 0 ? (
+                    {rankings.length === 0 ? (
                         <p className="text-center text-gray-500 p-8 font-pixel">No participants yet.</p>
                     ) : (
                         <table className="w-full text-sm text-left border-collapse">

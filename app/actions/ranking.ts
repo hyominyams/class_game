@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getTournamentRankings } from './tournament'
 import { BADGES } from '@/app/constants/badges'
+import { isRankingEligibleReason } from '@/app/constants/economy'
+import { requireActor, requireAuthenticatedActor } from './security/guards'
 
 export type RankUser = {
     rank: number;
@@ -15,6 +17,27 @@ export type RankUser = {
 };
 
 const EQUIPPED_BADGE_SLOT_ID = 'EQUIPPED_BADGE_SLOT';
+
+type StudentClassContext = {
+    supabase: Awaited<ReturnType<typeof createClient>>;
+    grade: number;
+    classNum: number;
+};
+
+async function getStudentClassContext(): Promise<StudentClassContext | null> {
+    const actorResult = await requireActor(['student']);
+    if (!actorResult.ok) return null;
+
+    if (actorResult.actor.grade === null || actorResult.actor.classNum === null) {
+        return null;
+    }
+
+    return {
+        supabase: actorResult.supabase,
+        grade: actorResult.actor.grade,
+        classNum: actorResult.actor.classNum,
+    };
+}
 
 async function getEquippedBadges(userIds: string[]) {
     if (userIds.length === 0) return {};
@@ -37,19 +60,10 @@ async function getEquippedBadges(userIds: string[]) {
 }
 
 export async function getMonthlyRankingAction() {
-    const supabase = await createClient();
+    const context = await getStudentClassContext();
+    if (!context) return [];
 
-    // 1. Get current user's profile
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!profile) return [];
+    const { supabase, grade, classNum } = context;
 
     // 2. Get monthly coin gains (from 1st of current month)
     const firstDayOfMonth = new Date();
@@ -60,8 +74,8 @@ export async function getMonthlyRankingAction() {
         .from('profiles')
         .select('id, nickname')
         .eq('role', 'student')
-        .eq('grade', profile.grade || 0)
-        .eq('class', profile.class || 0);
+        .eq('grade', grade)
+        .eq('class', classNum);
 
     if (!students || students.length === 0) return [];
 
@@ -71,13 +85,15 @@ export async function getMonthlyRankingAction() {
 
     const { data: transactions } = await adminClient
         .from('coin_transactions')
-        .select('user_id, amount')
+        .select('user_id, amount, reason')
         .in('user_id', studentIds)
         .gte('created_at', firstDayOfMonth.toISOString())
         .gt('amount', 0);
 
     const gainsMap: Record<string, number> = {};
-    transactions?.forEach(tx => {
+    transactions
+        ?.filter(tx => isRankingEligibleReason(tx.reason))
+        .forEach(tx => {
         gainsMap[tx.user_id] = (gainsMap[tx.user_id] || 0) + tx.amount;
     });
 
@@ -100,25 +116,17 @@ export async function getMonthlyRankingAction() {
 }
 
 export async function getGameRankingAction(gameId: string) {
-    const supabase = await createClient();
+    const context = await getStudentClassContext();
+    if (!context) return [];
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!profile) return [];
+    const { supabase, grade, classNum } = context;
 
     const { data: students } = await supabase
         .from('profiles')
         .select('id, nickname')
         .eq('role', 'student')
-        .eq('grade', profile.grade || 0)
-        .eq('class', profile.class || 0);
+        .eq('grade', grade)
+        .eq('class', classNum);
 
     if (!students || students.length === 0) return [];
 
@@ -160,6 +168,11 @@ export async function getGameRankingAction(gameId: string) {
 }
 
 export async function getAvailableGamesAction() {
+    const actorResult = await requireAuthenticatedActor();
+    if (!actorResult.ok) {
+        return [];
+    }
+
     const adminClient = createAdminClient();
     const { data } = await adminClient
         .from('games')
@@ -169,19 +182,10 @@ export async function getAvailableGamesAction() {
 }
 
 export async function getWeeklyRankingAction() {
-    const supabase = await createClient();
+    const context = await getStudentClassContext();
+    if (!context) return [];
 
-    // 1. Get current user's profile
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!profile) return [];
+    const { supabase, grade, classNum } = context;
 
     // 2. Get weekly coin gains from transactions
     const sevenDaysAgo = new Date();
@@ -191,8 +195,8 @@ export async function getWeeklyRankingAction() {
         .from('profiles')
         .select('id, nickname')
         .eq('role', 'student')
-        .eq('grade', profile.grade || 0)
-        .eq('class', profile.class || 0);
+        .eq('grade', grade)
+        .eq('class', classNum);
 
     if (!students || students.length === 0) return [];
 
@@ -202,13 +206,15 @@ export async function getWeeklyRankingAction() {
 
     const { data: transactions } = await adminClient
         .from('coin_transactions')
-        .select('user_id, amount')
+        .select('user_id, amount, reason')
         .in('user_id', studentIds)
         .gte('created_at', sevenDaysAgo.toISOString())
         .gt('amount', 0);
 
     const gainsMap: Record<string, number> = {};
-    transactions?.forEach(tx => {
+    transactions
+        ?.filter(tx => isRankingEligibleReason(tx.reason))
+        .forEach(tx => {
         gainsMap[tx.user_id] = (gainsMap[tx.user_id] || 0) + tx.amount;
     });
 
@@ -231,25 +237,16 @@ export async function getWeeklyRankingAction() {
 }
 
 export async function getTournamentRankingAction() {
-    const supabase = await createClient();
+    const context = await getStudentClassContext();
+    if (!context) return [];
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const { supabase, grade, classNum } = context;
 
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!profile) return [];
-
-    const now = new Date().toISOString();
     const { data: activeTournaments } = await supabase
         .from('tournaments')
         .select('id, title')
-        .eq('grade', profile.grade || 0)
-        .eq('class', profile.class || 0)
+        .eq('grade', grade)
+        .eq('class', classNum)
         .order('end_time', { ascending: false })
         .limit(1);
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "New Game Implementation"
+  short_description: "ClassQuest game integration checklist workflow"
+  default_prompt: "Implement a new ClassQuest game end-to-end and verify DB, question authoring, CSV, runtime, and tournament integration."

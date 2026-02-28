@@ -1,12 +1,30 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { Database } from "@/types/supabase";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireActor } from "@/app/actions/security/guards";
+import { canAccessClassScope, canManageStudent } from "@/app/actions/security/rbac";
+
+function normalizeManualCoinReason(reason: string, role: 'teacher' | 'admin', amount: number) {
+    const trimmedReason = reason.trim() || 'manual-adjustment';
+    if (
+        trimmedReason.startsWith('TEACHER_GRANT:')
+        || trimmedReason.startsWith('ADMIN_GRANT:')
+        || trimmedReason.startsWith('TEACHER_REVOKE:')
+        || trimmedReason.startsWith('ADMIN_REVOKE:')
+    ) {
+        return trimmedReason;
+    }
+
+    if (amount >= 0) {
+        return role === 'teacher' ? `TEACHER_GRANT:${trimmedReason}` : `ADMIN_GRANT:${trimmedReason}`;
+    }
+
+    return role === 'teacher' ? `TEACHER_REVOKE:${trimmedReason}` : `ADMIN_REVOKE:${trimmedReason}`;
+}
 
 /**
- * 문제 세트 생성
+ * Create a question set.
  */
 export async function createQuestionSetAction(data: {
     title: string;
@@ -15,20 +33,15 @@ export async function createQuestionSetAction(data: {
     classNum: number;
     subject?: string;
 }) {
-    const supabase = await createClient();
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Authentication required" };
+    const { actor, supabase } = actorResult;
 
-    // 프로필 정보 가져오기 (권한 확인)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-
-    if (!profile || profile.role !== 'teacher') {
-        return { success: false, error: "Only teachers can create question sets" };
+    if (actor.role === "teacher" && !canAccessClassScope(actor, data.grade, data.classNum)) {
+        return { success: false, error: "Forbidden: You can only create sets for your own class." };
     }
 
     const { data: insertedData, error } = await supabase
@@ -36,7 +49,7 @@ export async function createQuestionSetAction(data: {
         .insert({
             title: data.title,
             game_id: data.gameId || 'pixel-runner',
-            created_by: user.id,
+            created_by: actor.userId,
             grade: data.grade,
             class: data.classNum,
             is_active: false
@@ -54,47 +67,97 @@ export async function createQuestionSetAction(data: {
 }
 
 /**
- * 문제 세트 활성화/비활성화
- * 한 게임당 하나의 세트만 활성화 가능하도록 처리
+ * Toggle active state for a question set.
+ * Keep only one active set per game/scope.
  */
 export async function toggleQuestionSetAction(setId: string, gameId: string, active: boolean) {
-    const supabase = await createClient();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Authentication required" };
-
-    if (active) {
-        // 기존에 활성화된 다른 세트들을 비활성화
-        await supabase
-            .from('question_sets')
-            .update({ is_active: false })
-            .eq('game_id', gameId)
-            .eq('created_by', user.id);
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
     }
 
-    const { error } = await supabase
-        .from('question_sets')
-        .update({ is_active: active })
-        .eq('id', setId);
+    const { actor, supabase } = actorResult;
+    const adminClient = createAdminClient();
 
+    const updateClient = actor.role === "admin" ? adminClient : supabase;
+    const { data: targetSet, error: targetSetError } = await updateClient
+        .from("question_sets")
+        .select("grade, class")
+        .eq("id", setId)
+        .single();
+
+    if (targetSetError || !targetSet) {
+        return { success: false, error: "Question set not found" };
+    }
+
+    if (actor.role === "teacher" && !canAccessClassScope(actor, targetSet.grade, targetSet.class)) {
+        return { success: false, error: "Forbidden: You can only manage sets in your own class." };
+    }
+
+    if (active) {
+        let deactivateQuery = updateClient
+            .from("question_sets")
+            .update({ is_active: false })
+            .eq("game_id", gameId);
+
+        if (targetSet.grade !== null && targetSet.class !== null) {
+            deactivateQuery = deactivateQuery.eq("grade", targetSet.grade).eq("class", targetSet.class);
+        } else {
+            deactivateQuery = deactivateQuery.is("grade", null).is("class", null);
+        }
+
+        const { error: deactivateError } = await deactivateQuery;
+        if (deactivateError) return { success: false, error: deactivateError.message };
+    }
+
+    let activateQuery = updateClient
+        .from("question_sets")
+        .update({ is_active: active })
+        .eq("id", setId);
+
+    const { error } = await activateQuery;
     if (error) return { success: false, error: error.message };
 
-    revalidatePath('/teacher/questions');
+    revalidatePath("/teacher/questions");
+    revalidatePath("/admin/questions");
+    revalidatePath("/student/game");
+
     return { success: true };
 }
 
 /**
- * 문제 추가/수정 (세트 내 문항 관리)
+ * Replace all questions in a set.
  */
 export async function updateQuestionsAction(setId: string, questions: {
     question_text: string;
     options: string[];
     correct_answer: number;
 }[]) {
-    const supabase = await createClient();
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
 
-    // 기존 문제 삭제 후 일괄 삽입 (단순화된 동기화)
-    const { error: deleteError } = await supabase
+    const { actor, supabase } = actorResult;
+    const adminClient = createAdminClient();
+    const updateClient = actor.role === "admin" ? adminClient : supabase;
+
+    const { data: targetSet, error: setError } = await updateClient
+        .from("question_sets")
+        .select("grade, class")
+        .eq("id", setId)
+        .single();
+
+    if (setError || !targetSet) {
+        return { success: false, error: "Question set not found" };
+    }
+
+    if (actor.role === "teacher" && !canAccessClassScope(actor, targetSet.grade, targetSet.class)) {
+        return { success: false, error: "Forbidden: You can only edit sets in your own class." };
+    }
+
+    // Remove existing questions first (simple full overwrite).
+    const { error: deleteError } = await updateClient
         .from('questions')
         .delete()
         .eq('set_id', setId);
@@ -108,7 +171,7 @@ export async function updateQuestionsAction(setId: string, questions: {
         correct_answer: q.correct_answer
     }));
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await updateClient
         .from('questions')
         .insert(insertData);
 
@@ -121,8 +184,8 @@ export async function updateQuestionsAction(setId: string, questions: {
 }
 
 /**
- * 학생 계정 생성
- * 교사는 본인의 학년/반 학생만 생성 가능
+ * Create one student account.
+ * Teachers can only create students in their own grade/class.
  */
 export async function createStudentAction(data: {
     nickname: string;
@@ -130,33 +193,23 @@ export async function createStudentAction(data: {
     grade: number;
     classNum: number;
 }) {
-    const supabase = await createClient();
-
-    // 1. 현재 사용자(교사) 정보 및 권한 확인
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Authentication required" };
-
-    const { data: teacherProfile } = await supabase
-        .from('profiles')
-        .select('role, grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!teacherProfile || teacherProfile.role !== 'teacher') {
-        return { success: false, error: "Only teachers can create students" };
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
     }
 
-    // 2. 학년/반 일치 확인 (PRD: 자기 학급 학생만 생성 가능)
-    if (data.grade !== teacherProfile.grade || data.classNum !== teacherProfile.class) {
-        return { success: false, error: "본인의 학년/반 학생만 등록할 수 있습니다." };
+    const { actor } = actorResult;
+
+    if (actor.role === "teacher" && !canAccessClassScope(actor, data.grade, data.classNum)) {
+        return { success: false, error: "You can only register students in your own grade/class." };
     }
 
-    // 3. Admin Client를 이용한 계정 생성
+    // Create account through admin client.
     const adminSupabase = createAdminClient();
     const email = `${data.username}@classquest.edu`;
-    const password = "1234"; // 초기 비밀번호
+    const password = "1234"; // Initial password
 
-    const { data: authUser, error: authError } = await adminSupabase.auth.admin.createUser({
+    const { error: authError } = await adminSupabase.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
@@ -179,7 +232,7 @@ export async function createStudentAction(data: {
 }
 
 /**
- * 학생 계정 일괄 생성
+ * Create student accounts in bulk.
  */
 export async function createBulkStudentsAction(students: {
     nickname: string;
@@ -187,21 +240,12 @@ export async function createBulkStudentsAction(students: {
     grade: number;
     classNum: number;
 }[]) {
-    const supabase = await createClient();
-
-    // 1. 현재 사용자(교사) 정보 및 권한 확인
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Authentication required" };
-
-    const { data: teacherProfile } = await supabase
-        .from('profiles')
-        .select('role, grade, class')
-        .eq('id', user.id)
-        .single();
-
-    if (!teacherProfile || teacherProfile.role !== 'teacher') {
-        return { success: false, error: "Only teachers can create students" };
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
     }
+
+    const { actor } = actorResult;
 
     const adminSupabase = createAdminClient();
     const results = {
@@ -209,15 +253,14 @@ export async function createBulkStudentsAction(students: {
         failures: [] as { username: string; error: string }[]
     };
 
-    // 2. 일괄 생성 루프
+    // 2) Create accounts in a loop.
     for (const student of students) {
-        // 학년/반 일치 확인
-        if (student.grade !== teacherProfile.grade || student.classNum !== teacherProfile.class) {
-            results.failures.push({ username: student.username, error: "타 학급 학생 생성 불가" });
+        if (actor.role === "teacher" && !canAccessClassScope(actor, student.grade, student.classNum)) {
+            results.failures.push({ username: student.username, error: "Cannot create students outside your class." });
             continue;
         }
 
-        const email = `${student.username}@classquest.edu`; // 도메인 정책 통일
+        const email = `${student.username}@classquest.edu`; // Derived email pattern
         const password = "1234";
 
         const { error: authError } = await adminSupabase.auth.admin.createUser({
@@ -247,24 +290,37 @@ export async function createBulkStudentsAction(students: {
 }
 
 /**
- * 학생에게 코인 지급
+ * Grant or revoke coins for a student.
  */
 export async function giveCoinToStudentAction(studentId: string, amount: number, reason: string) {
-    const supabase = await createClient();
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
+
+    const { actor } = actorResult;
     const supabaseAdmin = createAdminClient();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Not logged in" };
-
-    const { data: teacher } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
+    const { data: targetStudent, error: targetStudentError } = await supabaseAdmin
+        .from("profiles")
+        .select("role, grade, class")
+        .eq("id", studentId)
         .single();
 
-    if (!teacher || (teacher.role !== 'teacher' && teacher.role !== 'admin')) {
-        return { success: false, error: "Unauthorized" };
+    if (targetStudentError || !targetStudent) {
+        return { success: false, error: "Student not found" };
     }
+
+    if (!canManageStudent(actor, {
+        role: targetStudent.role,
+        grade: targetStudent.grade,
+        classNum: targetStudent.class,
+    })) {
+        return { success: false, error: "Forbidden: You can only adjust your own class students." };
+    }
+
+    const issuerRole = actor.role === "teacher" ? "teacher" : "admin";
+    const normalizedReason = normalizeManualCoinReason(reason, issuerRole, amount);
 
     // 1. Update Balance via RPC (Atomic & Bypasses RLS since it's SECURITY DEFINER)
     const { error: rpcError } = await supabaseAdmin.rpc('increment_coin_balance', {
@@ -287,7 +343,7 @@ export async function giveCoinToStudentAction(studentId: string, amount: number,
         .insert({
             user_id: studentId,
             amount: amount,
-            reason: reason,
+            reason: normalizedReason,
             type: amount > 0 ? 'admin_grant' : 'admin_revoke'
         });
 

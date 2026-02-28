@@ -13,7 +13,17 @@ export function DailyCoinTracker() {
             const data = await getDailyCoinProgress();
             setProgress(data);
         };
+
         fetchProgress();
+
+        const refreshProgress = () => {
+            fetchProgress();
+        };
+
+        window.addEventListener("daily-coin-progress-refresh", refreshProgress);
+        return () => {
+            window.removeEventListener("daily-coin-progress-refresh", refreshProgress);
+        };
     }, []);
 
     if (!progress) return null;

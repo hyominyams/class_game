@@ -1,8 +1,19 @@
 'use server'
 
 import { createClient } from "@/lib/supabase/server";
+import { requireActor } from "@/app/actions/security/guards";
 
 export async function getAdminDashboardStats() {
+    const actorResult = await requireActor(["admin"]);
+    if (!actorResult.ok) {
+        return {
+            totalStudents: 0,
+            totalTeachers: 0,
+            totalClasses: 0,
+            gamePlays: 0,
+        };
+    }
+
     const supabase = await createClient();
 
     // 1. Total Students

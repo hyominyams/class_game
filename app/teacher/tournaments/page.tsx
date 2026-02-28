@@ -3,6 +3,14 @@ import { CreateTournamentModal } from "@/components/teacher/create-tournament-mo
 import { TournamentListClient } from "@/components/teacher/tournament-list-client";
 import { createClient } from "@/lib/supabase/server";
 
+type TournamentListItem = {
+    id: string;
+    title: string;
+    end_time: string;
+    game_id: string;
+    is_active: boolean;
+};
+
 export default async function TeacherTournamentsPage() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -22,6 +30,20 @@ export default async function TeacherTournamentsPage() {
         .eq('created_by', user?.id)
         .order('created_at', { ascending: false });
 
+    const normalizedTournaments: TournamentListItem[] = (tournaments || []).flatMap((tournament) => {
+        if (!tournament.game_id || !tournament.end_time) {
+            return [];
+        }
+
+        return [{
+            id: tournament.id,
+            title: tournament.title || "Tournament",
+            end_time: tournament.end_time,
+            game_id: tournament.game_id,
+            is_active: Boolean(tournament.is_active),
+        }];
+    });
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-100 p-6 border-2 border-black rounded shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)] gap-4">
@@ -36,7 +58,7 @@ export default async function TeacherTournamentsPage() {
                 </CreateTournamentModal>
             </div>
 
-            <TournamentListClient tournaments={tournaments || []} />
+            <TournamentListClient tournaments={normalizedTournaments} />
         </div>
     );
 }

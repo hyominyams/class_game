@@ -5,20 +5,11 @@ import { PixelCard } from "@/components/ui/pixel-card";
 import { PixelButton } from "@/components/ui/pixel-button";
 import { PixelModal } from "@/components/ui/pixel-modal";
 import { purchaseItem, getUserCoins } from "@/app/actions/store";
-
-// Mock Data
-const ITEMS = [
-    { id: "item_role_change", name: "1인1역 변경권", price: 500, icon: "🔄", color: "bg-blue-100", description: "맡고 있는 역할을 다른 직업으로 변경할 수 있습니다." },
-    { id: "item_cleaning_exemption", name: "청소 면제권", price: 1000, icon: "🧹", color: "bg-green-100", description: "오늘의 청소 의무를 1회 면제받을 수 있습니다." },
-    { id: "item_snack", name: "간식 교환권", price: 800, icon: "🍭", color: "bg-pink-100", description: "선생님께 맛있는 간식 하나를 받을 수 있습니다." },
-    { id: "item_lunch_priority", name: "급식 우선권", price: 600, icon: "🍱", color: "bg-orange-100", description: "가장 먼저 급식을 먹을 수 있는 권리입니다." },
-    { id: "item_group_selection", name: "모둠 선택권", price: 2000, icon: "🤝", color: "bg-purple-100", description: "원하는 친구와 같은 모둠이 될 수 있습니다." },
-    { id: "item_free_time", name: "자유 시간 10분", price: 1500, icon: "⏰", color: "bg-yellow-100", description: "10분의 보너스 자유 시간을 얻습니다." },
-];
+import { STORE_ITEMS } from "@/app/constants/store-items";
 
 export default function StorePage() {
     const [userCoins, setUserCoins] = useState<number | null>(null);
-    const [selectedItem, setSelectedItem] = useState<typeof ITEMS[0] | null>(null);
+    const [selectedItem, setSelectedItem] = useState<typeof STORE_ITEMS[0] | null>(null);
     const [isPending, startTransition] = useTransition();
 
     useEffect(() => {
@@ -38,13 +29,13 @@ export default function StorePage() {
         }
 
         startTransition(async () => {
-            const result = await purchaseItem(selectedItem.id, selectedItem.price, selectedItem.name);
+            const result = await purchaseItem(selectedItem.id);
             if (result.success) {
-                setUserCoins(result.newBalance!);
-                alert(result.message);
+                setUserCoins(result.newBalance);
+                alert(result.message || "Purchase completed.");
                 setSelectedItem(null);
             } else {
-                alert(result.error);
+                alert(result.error || "Purchase failed.");
             }
         });
     };
@@ -65,7 +56,7 @@ export default function StorePage() {
             </header>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                {ITEMS.map((item) => (
+                {STORE_ITEMS.map((item) => (
                     <div
                         key={item.id}
                         onClick={() => setSelectedItem(item)}

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import { requireActor } from "@/app/actions/security/guards";
 
 export type ClassStat = {
     grade: number;
@@ -20,6 +21,11 @@ export type GradeStat = {
 };
 
 export async function getAdminClassesStats() {
+    const actorResult = await requireActor(["admin"]);
+    if (!actorResult.ok) {
+        return [];
+    }
+
     const supabase = await createClient();
 
     const { data: profiles, error } = await supabase
@@ -97,6 +103,11 @@ export type CreateTeacherState = {
 }
 
 export async function createTeacherAction(prevState: CreateTeacherState, formData: FormData): Promise<CreateTeacherState> {
+    const actorResult = await requireActor(["admin"]);
+    if (!actorResult.ok) {
+        return { error: actorResult.error };
+    }
+
     const supabaseAdmin = createAdminClient();
 
     const nickname = formData.get('nickname') as string;

@@ -3,23 +3,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { BADGES } from '@/app/constants/badges'
 import { revalidatePath } from 'next/cache'
+import { requireActor } from './security/guards'
 
 const EQUIPPED_BADGE_SLOT_ID = 'EQUIPPED_BADGE_SLOT';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function getStudentStatsData() {
-    const supabase = await createClient();
-    const adminClient = createAdminClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const actorResult = await requireActor(['student']);
+    if (!actorResult.ok) return null;
 
-    if (!user) return null;
+    const { supabase, actor } = actorResult;
+    const adminClient = createAdminClient();
 
     // 1. Fetch Profile
     const { data: profile } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', actor.userId)
         .single();
 
     if (!profile) return null;
@@ -28,7 +29,7 @@ export async function getStudentStatsData() {
     const { data: logs, count } = await supabase
         .from('game_logs')
         .select('id, score, play_time, game_id, created_at, metadata', { count: 'exact' })
-        .eq('user_id', user.id);
+        .eq('user_id', actor.userId);
 
     const totalPlays = count || 0;
     const totalScore = logs?.reduce((sum, log) => sum + (log.score || 0), 0) || 0;
@@ -39,7 +40,7 @@ export async function getStudentStatsData() {
     const { data: userItems } = await adminClient
         .from('student_items')
         .select('item_id, item_name')
-        .eq('user_id', user.id);
+        .eq('user_id', actor.userId);
 
     const ownedBadgeIds = new Set(
         userItems
@@ -71,7 +72,7 @@ export async function getStudentStatsData() {
         const { data: todayTransactions } = await adminClient
             .from('coin_transactions')
             .select('reference_id, amount')
-            .eq('user_id', user.id)
+            .eq('user_id', actor.userId)
             .ilike('reason', 'GAME_REWARD:%')
             .gte('created_at', today.toISOString());
 
@@ -86,7 +87,7 @@ export async function getStudentStatsData() {
     // Grant new badges (Use Admin Client)
     if (newBadges.length > 0) {
         const newBadgeItems = newBadges.map(badgeId => ({
-            user_id: user.id,
+            user_id: actor.userId,
             item_id: `badge_${badgeId}`,
             item_name: BADGES.find(b => b.id === badgeId)?.name || 'Unknown Badge',
             quantity: 1
@@ -122,23 +123,25 @@ export async function getStudentStatsData() {
 }
 
 export async function equipBadgeAction(badgeId: string) {
-    const supabase = await createClient();
-    const adminClient = createAdminClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const actorResult = await requireActor(['student']);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
 
-    if (!user) return { success: false, error: "Not logged in" };
+    const { actor } = actorResult;
+    const adminClient = createAdminClient();
 
     // Verify ownership (Use Admin Client)
     const { data: owned } = await adminClient
         .from('student_items')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', actor.userId)
         .eq('item_id', `badge_${badgeId}`)
         .single();
 
     if (!owned) {
         // Double check formatting just in case
-        console.warn(`Badge ownership check failed for user ${user.id}, badge_${badgeId}`);
+        console.warn(`Badge ownership check failed for user ${actor.userId}, badge_${badgeId}`);
         return { success: false, error: "You don't own this badge!" };
     }
 
@@ -146,7 +149,7 @@ export async function equipBadgeAction(badgeId: string) {
     const { error: deleteError } = await adminClient
         .from('student_items')
         .delete()
-        .eq('user_id', user.id)
+        .eq('user_id', actor.userId)
         .eq('item_id', EQUIPPED_BADGE_SLOT_ID);
 
     if (deleteError) {
@@ -158,7 +161,7 @@ export async function equipBadgeAction(badgeId: string) {
     const { error: insertError } = await adminClient
         .from('student_items')
         .insert({
-            user_id: user.id,
+            user_id: actor.userId,
             item_id: EQUIPPED_BADGE_SLOT_ID,
             item_name: badgeId,
             quantity: 1

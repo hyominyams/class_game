@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "check:utf8": "node scripts/check-utf8.mjs",
+    "prebuild": "npm run check:utf8",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -34,6 +36,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "gifuct-js": "^2.1.2",
+    "pngjs": "^7.0.0",
     "shadcn": "^3.8.4",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",

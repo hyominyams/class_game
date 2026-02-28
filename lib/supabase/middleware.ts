@@ -1,5 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    getAllowedRolesForPath,
+    getDashboardPathForRole,
+    type AppRole,
+} from "@/app/actions/security/rbac";
+
+const PUBLIC_ROUTES = ["/", "/login", "/join", "/auth/callback", "/api/test-seed"];
+
+function isPublicRoute(pathname: string) {
+    if (pathname.startsWith("/auth/")) return true;
+    return PUBLIC_ROUTES.some((route) => pathname === route);
+}
 
 export async function updateSession(request: NextRequest) {
     let response = NextResponse.next({
@@ -35,33 +47,35 @@ export async function updateSession(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser();
 
-    // Public Routes (Allow access without login)
-    // Public Routes (Allow access without login)
-    const publicRoutes = ['/', '/login', '/join', '/auth/callback', '/api/test-seed'];
-    const isPublicRoute = publicRoutes.some(route =>
-        request.nextUrl.pathname === route || request.nextUrl.pathname.startsWith('/auth/')
-    );
+    const { pathname } = request.nextUrl;
+    const isPublic = isPublicRoute(pathname);
 
-    if (!user && !isPublicRoute) {
+    if (!user && !isPublic) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    // Admin Route Protection
-    if (request.nextUrl.pathname.startsWith("/admin")) {
-        if (!user) {
-            return NextResponse.redirect(new URL("/login", request.url));
-        }
+    if (isPublic || !user) {
+        return response;
+    }
 
-        // Role verification
-        const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
+    const allowedRoles = getAllowedRolesForPath(pathname);
+    if (!allowedRoles) {
+        return response;
+    }
 
-        if (!profile || profile.role !== "admin") {
-            return NextResponse.redirect(new URL("/", request.url));
-        }
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+    const role = (profile?.role ?? null) as AppRole | null;
+    if (!role) {
+        return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    if (!allowedRoles.includes(role)) {
+        return NextResponse.redirect(new URL(getDashboardPathForRole(role), request.url));
     }
 
     return response;

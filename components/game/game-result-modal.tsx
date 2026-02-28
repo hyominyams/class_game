@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Trophy, XCircle, Coins, ArrowRight, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface GameResultModalProps {
     isOpen: boolean;
@@ -28,99 +29,171 @@ export function GameResultModal({
     onExit,
     title
 }: GameResultModalProps) {
+    const [countedScore, setCountedScore] = useState(0);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setCountedScore(0);
+            return;
+        }
+
+        let start = 0;
+        const duration = 1500;
+        const startTime = performance.now();
+
+        const animateScore = (currentTime: number) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easeOutQuad = 1 - (1 - progress) * (1 - progress);
+            setCountedScore(Math.floor(easeOutQuad * score));
+
+            if (progress < 1) {
+                requestAnimationFrame(animateScore);
+            } else {
+                setCountedScore(score);
+            }
+        };
+
+        requestAnimationFrame(animateScore);
+    }, [isOpen, score]);
+
     if (!isOpen) return null;
 
     const isMaxed = dailyCoinsTotal >= dailyLimit;
 
     return (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className={cn(
-                "w-full max-w-md bg-[#fff1e6] border-4 border-black shadow-[8px_8px_0_0_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in duration-300",
-                isClear ? "ring-4 ring-[#00b894]/50" : "ring-4 ring-[#ff2e63]/50"
-            )}>
-                {/* Header Section */}
-                <div className={cn(
-                    "p-6 text-center border-b-4 border-black",
-                    isClear ? "bg-[#00b894]" : "bg-[#ff2e63]"
-                )}>
-                    <div className="flex justify-center mb-2">
-                        {isClear ? (
-                            <Trophy className="w-16 h-16 text-white drop-shadow-[2px_2px_0_rgba(0,0,0,0.5)]" />
-                        ) : (
-                            <XCircle className="w-16 h-16 text-white drop-shadow-[2px_2px_0_rgba(0,0,0,0.5)]" />
-                        )}
-                    </div>
-                    <h2 className="font-pixel text-4xl text-white drop-shadow-[3px_3px_0_rgba(0,0,0,0.5)] tracking-tighter">
-                        {isClear ? (title || "MISSION CLEAR") : (title || "GAME OVER")}
-                    </h2>
-                </div>
+        <AnimatePresence>
+            {isOpen && (
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 bg-[#0a0510]/80 backdrop-blur-md"
+                    />
 
-                {/* Score Section */}
-                <div className="p-8 space-y-6">
-                    <div className="text-center space-y-1">
-                        <p className="font-pixel text-sm text-gray-500 uppercase tracking-widest">Final Score</p>
-                        <p className="font-pixel text-5xl text-black">{score.toLocaleString()}</p>
-                    </div>
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                        className="relative w-full max-w-md"
+                    >
+                        {/* 8-bit Border Container */}
+                        <div className={cn(
+                            "relative overflow-hidden rounded-xl border-[6px] shadow-[0_15px_50px_rgba(0,0,0,0.5)]",
+                            isClear ? "border-[#00cec9] bg-[#1a2f33]" : "border-[#ff7675] bg-[#2d1b1e]"
+                        )}>
+                            {/* Inner Glow / Background Details */}
+                            <div className={cn(
+                                "absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_center,var(--tw-gradient-from),transparent_70%)]",
+                                isClear ? "from-[#55efc4]" : "from-[#ff6b81]"
+                            )} />
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rotate-45 transform origin-top-right blur-2xl" />
 
-                    {/* Coin Reward Card */}
-                    <div className="bg-white border-4 border-black p-4 relative shadow-[4px_4px_0_0_rgba(0,0,0,0.1)]">
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-yellow-400 border-2 border-black flex items-center justify-center">
-                                    <Coins className="w-5 h-5 text-black" />
-                                </div>
-                                <span className="font-pixel text-sm font-bold">REWARD</span>
-                            </div>
-                            <span className="font-pixel text-2xl text-yellow-600">+{coinsEarned}</span>
-                        </div>
-
-                        {/* Daily Progress Bar */}
-                        <div className="space-y-1 mt-4">
-                            <div className="flex justify-between text-[10px] font-pixel text-gray-400">
-                                <span>DAILY LIMIT</span>
-                                <span>{dailyCoinsTotal}/{dailyLimit}</span>
-                            </div>
-                            <div className="h-4 bg-gray-200 border-2 border-black overflow-hidden">
-                                <div
-                                    className={cn(
-                                        "h-full transition-all duration-1000",
-                                        isMaxed ? "bg-red-500" : "bg-yellow-400"
+                            {/* Header */}
+                            <div className={cn(
+                                "relative p-8 text-center border-b-[6px]",
+                                isClear ? "bg-[#00b894] border-[#009276]" : "bg-[#d63031] border-[#b32b2b]"
+                            )}>
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1, rotate: isClear ? [0, -10, 10, -10, 0] : 0 }}
+                                    transition={{ delay: 0.2, type: "spring" }}
+                                    className="flex justify-center mb-4 relative"
+                                >
+                                    {isClear && (
+                                        <div className="absolute inset-0 animate-ping opacity-50 bg-white blur-xl rounded-full scale-150" />
                                     )}
-                                    style={{ width: `${Math.min(100, (dailyCoinsTotal / dailyLimit) * 100)}%` }}
-                                />
+                                    {isClear ? (
+                                        <Trophy className="w-20 h-20 text-[#ffeaa7] drop-shadow-[4px_4px_0_rgba(0,0,0,0.4)] relative z-10" />
+                                    ) : (
+                                        <XCircle className="w-20 h-20 text-[#ffcccb] drop-shadow-[4px_4px_0_rgba(0,0,0,0.4)] relative z-10" />
+                                    )}
+                                </motion.div>
+                                <h2 className="font-pixel text-4xl text-white drop-shadow-[4px_4px_0_rgba(0,0,0,0.4)] tracking-wider">
+                                    {isClear ? (title || "MISSION CLEAR!") : (title || "GAME OVER")}
+                                </h2>
                             </div>
-                            {isMaxed && (
-                                <p className="text-[10px] font-pixel text-[#ff2e63] mt-1 animate-pulse">
-                                    오늘의 코인을 모두 모았습니다! (연습 모드)
-                                </p>
-                            )}
+
+                            {/* Content */}
+                            <div className="relative p-8 space-y-8">
+                                {/* Score Display */}
+                                <div className="text-center">
+                                    <p className="font-pixel text-sm text-[#a4b0be] mb-2 uppercase tracking-[0.2em]">Final Score</p>
+                                    <h3 className={cn(
+                                        "font-pixel text-6xl drop-shadow-[3px_3px_0_rgba(0,0,0,1)]",
+                                        isClear ? "text-[#55efc4]" : "text-[#ff7675]"
+                                    )}>
+                                        {countedScore.toLocaleString()}
+                                    </h3>
+                                </div>
+
+                                {/* Coin Rewards Card */}
+                                <div className="bg-[#111418] rounded-lg border-2 border-[#2f3542] p-5 relative overflow-hidden group">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full duration-1000 transition-transform" />
+
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-b from-[#ffeaa7] to-[#fdcb6e] border-2 border-black flex items-center justify-center shadow-[2px_2px_0_rgba(0,0,0,0.5)]">
+                                                <Coins className="w-5 h-5 text-[#d35400]" />
+                                            </div>
+                                            <span className="font-pixel text-sm text-[#dfe4ea] tracking-wider">REWARD</span>
+                                        </div>
+                                        <span className="font-pixel text-3xl text-[#fdcb6e] drop-shadow-[2px_2px_0_rgba(0,0,0,1)]">
+                                            +{coinsEarned}
+                                        </span>
+                                    </div>
+
+                                    {/* Progress Bar */}
+                                    <div className="space-y-2 relative z-10">
+                                        <div className="flex justify-between font-pixel text-[10px] text-[#747d8c]">
+                                            <span>DAILY LIMIT</span>
+                                            <span className={isMaxed ? "text-[#ff7675]" : "text-[#a4b0be]"}>
+                                                {dailyCoinsTotal} / {dailyLimit}
+                                            </span>
+                                        </div>
+                                        <div className="h-3 bg-[#1e272e] rounded-full border border-black overflow-hidden relative">
+                                            <div
+                                                className={cn(
+                                                    "absolute inset-y-0 left-0 transition-all duration-1000 ease-out",
+                                                    isMaxed ? "bg-gradient-to-r from-[#ff7675] to-[#d63031]" : "bg-gradient-to-r from-[#ffeaa7] to-[#fdcb6e]"
+                                                )}
+                                                style={{ width: `${Math.min(100, (dailyCoinsTotal / dailyLimit) * 100)}%` }}
+                                            />
+                                        </div>
+                                        {isMaxed && (
+                                            <p className="text-[11px] font-bold text-[#ff7675] text-center mt-2 animate-pulse bg-[#ff7675]/10 rounded py-1">
+                                                오늘의 획득 가능 코인을 모두 모았습니다!
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Buttons */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Button
+                                        onClick={onRetry}
+                                        className="h-14 font-pixel text-lg bg-[#2d3436] hover:bg-[#636e72] text-white border-2 border-black shadow-[0_6px_0_0_#1e272e] hover:shadow-[0_4px_0_0_#1e272e] hover:translate-y-[2px] active:shadow-none active:translate-y-[6px] transition-all"
+                                    >
+                                        <RotateCcw className="mr-2 w-5 h-5" /> RETRY
+                                    </Button>
+                                    <Button
+                                        onClick={onExit}
+                                        className={cn(
+                                            "h-14 font-pixel text-lg text-white border-2 border-black shadow-[0_6px_0_0_rgba(0,0,0,0.5)] hover:shadow-[0_4px_0_0_rgba(0,0,0,0.5)] hover:translate-y-[2px] active:shadow-none active:translate-y-[6px] transition-all",
+                                            isClear ? "bg-[#00b894] hover:bg-[#55efc4] shadow-[0_6px_0_0_#009276]" : "bg-[#d63031] hover:bg-[#ff7675] shadow-[0_6px_0_0_#b32b2b]"
+                                        )}
+                                    >
+                                        EXIT <ArrowRight className="ml-2 w-5 h-5" />
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                        <Button
-                            onClick={onRetry}
-                            className="h-14 font-pixel text-lg bg-white hover:bg-gray-100 text-black border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all"
-                        >
-                            <RotateCcw className="mr-2 w-5 h-5" /> RETRY
-                        </Button>
-                        <Button
-                            onClick={onExit}
-                            className="h-14 font-pixel text-lg bg-black hover:bg-zinc-800 text-white border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,0.3)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all"
-                        >
-                            EXIT <ArrowRight className="ml-2 w-5 h-5" />
-                        </Button>
-                    </div>
+                    </motion.div>
                 </div>
-
-                {/* Footer Deco */}
-                <div className="h-2 bg-black/10 flex">
-                    {Array.from({ length: 20 }).map((_, i) => (
-                        <div key={i} className={cn("flex-1", i % 2 === 0 ? "bg-black/5" : "bg-transparent")} />
-                    ))}
-                </div>
-            </div>
-        </div>
+            )}
+        </AnimatePresence>
     );
 }

@@ -1,106 +1,134 @@
 "use client";
 
 import { useState } from "react";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { WordSetModal } from "./word-set-modal";
-import { HistorySetModal } from "./history-set-modal";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { HistorySetModal } from "./history-set-modal";
+import { WordChainSetModal } from "./word-chain-set-modal";
+import { WordSetModal } from "./word-set-modal";
 
-type Game = {
-    id: string; // or number
+type GameItem = {
+    id: string;
     title: string;
 };
 
+type TeacherProfile = {
+    grade?: number | null;
+    class?: number | null;
+} | null;
 
+type QuestionSetModalWrapperProps = {
+    selectedGameId: string;
+    selectedGame?: GameItem;
+    teacherProfile?: TeacherProfile;
+    children: React.ReactNode;
+    setId?: string;
+    initialTitle?: string;
+    initialGrade?: number | null;
+    initialClass?: number | null;
+    initialQuestionMode?: string | null;
+};
 
-// Helper component for the selected game's modal
 export function QuestionSetModalWrapper({
     selectedGameId,
     selectedGame,
     teacherProfile,
     children,
     setId,
-    initialTitle
-}: {
-    selectedGameId: string;
-    selectedGame: { title: string } | undefined;
-    teacherProfile: any;
-    children: React.ReactNode;
-    setId?: string;
-    initialTitle?: string;
-}) {
-    if (!selectedGameId) return <>{children}</>;
+    initialTitle,
+    initialGrade,
+    initialClass,
+    initialQuestionMode,
+}: QuestionSetModalWrapperProps) {
+    if (!selectedGameId) {
+        return <>{children}</>;
+    }
 
-    // Check for specific game types (using ID as proxy for now)
-    if (selectedGameId === 'word-runner' || selectedGameId.includes('word')) {
+    if (selectedGameId === "word-chain") {
         return (
-            <WordSetModal
+            <WordChainSetModal
                 gameId={selectedGameId}
                 gameTitle={selectedGame?.title}
                 teacherProfile={teacherProfile}
                 setId={setId}
                 initialTitle={initialTitle}
+                initialGrade={initialGrade}
+                initialClass={initialClass}
+            >
+                {children}
+            </WordChainSetModal>
+        );
+    }
+
+    if (selectedGameId === "word-runner" || selectedGameId === "word-defense") {
+        return (
+            <WordSetModal
+                gameId={selectedGameId === "word-defense" ? "word-runner" : selectedGameId}
+                gameTitle={selectedGame?.title}
+                teacherProfile={teacherProfile}
+                setId={setId}
+                initialTitle={initialTitle}
+                initialGrade={initialGrade}
+                initialClass={initialClass}
+                initialQuestionMode={initialQuestionMode}
             >
                 {children}
             </WordSetModal>
         );
     }
 
-    // Default fallback to Generic Quiz Modal
     return (
         <HistorySetModal
             gameId={selectedGameId}
-            gameTitle={selectedGame?.title || '퀴즈'}
+            gameTitle={selectedGame?.title || "퀴즈"}
             teacherProfile={teacherProfile}
             setId={setId}
             initialTitle={initialTitle}
+            initialGrade={initialGrade}
+            initialClass={initialClass}
         >
             {children}
         </HistorySetModal>
     );
 }
 
-import { useRouter } from "next/navigation";
-
 export function QuestionSetManager({
     games,
     teacherProfile,
-    initialGameId = ""
+    initialGameId = "",
+    basePath = "/teacher/questions",
 }: {
-    games: Game[],
-    teacherProfile?: any,
-    initialGameId?: string
+    games: GameItem[];
+    teacherProfile?: TeacherProfile;
+    initialGameId?: string;
+    basePath?: string;
 }) {
-    const [selectedGameId, setSelectedGameId] = useState<string>(initialGameId);
+    const [selectedGameId, setSelectedGameId] = useState(initialGameId);
     const router = useRouter();
 
-    // Helper to get selected game title
-    const selectedGame = games.find(g => String(g.id) === selectedGameId);
+    const selectedGame = games.find((game) => String(game.id) === selectedGameId);
 
     const handleGameChange = (value: string) => {
         setSelectedGameId(value);
-        router.push(`/teacher/questions?gameId=${value}`);
+        router.push(`${basePath}?gameId=${value}`);
     };
 
     return (
         <div className="flex gap-2 items-center">
             <Select onValueChange={handleGameChange} value={selectedGameId}>
-                <SelectTrigger className="w-[180px] bg-white border-2 border-black">
+                <SelectTrigger className="w-[190px] bg-white border-2 border-black">
                     <SelectValue placeholder="게임 선택" />
                 </SelectTrigger>
                 <SelectContent className="bg-white border-2 border-black font-bold">
-                    <SelectItem value="all" className="hover:bg-gray-50">전체 보기</SelectItem>
-                    {games && games.length > 0 ? (
-                        games.map(g => (
-                            <SelectItem key={String(g.id)} value={String(g.id)} className="hover:bg-yellow-50">
-                                {g.title}
+                    <SelectItem value="all" className="hover:bg-gray-50">
+                        전체 보기
+                    </SelectItem>
+                    {games.length > 0 ? (
+                        games.map((game) => (
+                            <SelectItem key={game.id} value={game.id} className="hover:bg-yellow-50">
+                                {game.title}
                             </SelectItem>
                         ))
                     ) : (

@@ -151,6 +151,7 @@ export type Database = {
                     grade: number | null
                     id: string
                     is_active: boolean | null
+                    question_mode: string | null
                     title: string
                 }
                 Insert: {
@@ -161,6 +162,7 @@ export type Database = {
                     grade?: number | null
                     id?: string
                     is_active?: boolean | null
+                    question_mode?: string | null
                     title: string
                 }
                 Update: {
@@ -171,6 +173,7 @@ export type Database = {
                     grade?: number | null
                     id?: string
                     is_active?: boolean | null
+                    question_mode?: string | null
                     title?: string
                 }
                 Relationships: [

@@ -1,55 +1,89 @@
 import React from "react";
-import { PixelCard } from "@/components/ui/pixel-card";
-import { Trophy, Target, Sparkles, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { getStudentDashboardData } from "@/app/actions/game";
-import { AttendanceButton } from "@/components/student/attendance-button";
-import { DailyCoinTracker } from "@/components/student/daily-coin-tracker";
 import { checkAndSettleWeeklyRewards } from "@/app/actions/weekly-settlement";
-import { WeeklyRewardModalWrapper } from "@/components/student/weekly-reward-modal-wrapper";
-import { DashboardCards } from "@/components/student/dashboard-cards";
 import { calculateLevel } from "@/app/constants/levels";
 import { TITLES, getHighestTitle } from "@/app/constants/titles";
+import { AttendanceButton } from "@/components/student/attendance-button";
+import { DailyCoinTracker } from "@/components/student/daily-coin-tracker";
+import { DashboardCards } from "@/components/student/dashboard-cards";
+import { WeeklyRewardModalWrapper } from "@/components/student/weekly-reward-modal-wrapper";
+
+type Activity = {
+    id: string;
+    game_id?: string | null;
+    created_at?: string | null;
+    coin_transactions?: Array<{ amount?: number | null }> | null;
+};
+
+type DashboardData = {
+    profile: {
+        nickname?: string | null;
+        coin_balance?: number | null;
+    } | null;
+    activities: Activity[];
+    rank: number;
+    totalScore: number;
+    totalCoinsEarned: number;
+    totalGamesPlayed: number;
+    attendanceCount: number;
+    currentEquippedTitleId: string | null;
+};
+
+const GAME_LABELS: Record<string, string> = {
+    "pixel-runner": "픽셀 러너",
+    "history-quiz": "역사 퀴즈",
+    "word-runner": "워드 디펜스",
+    attendance: "출석 체크",
+};
 
 export default async function StudentDashboard() {
     const data = await getStudentDashboardData();
     if (!data) return <div>로그인이 필요합니다.</div>;
 
-    // Check for weekly rewards
     const settlementResult = await checkAndSettleWeeklyRewards();
 
-    const { profile, activities, rank, totalScore, totalCoinsEarned, totalGamesPlayed, attendanceCount, currentEquippedTitleId } = data as any;
+    const dashboardData = data as DashboardData;
+
+    const {
+        profile,
+        activities,
+        rank,
+        totalScore,
+        totalCoinsEarned,
+        totalGamesPlayed,
+        attendanceCount,
+        currentEquippedTitleId,
+    } = dashboardData;
 
     const level = calculateLevel(totalScore);
-
-    const equippedTitleObj = currentEquippedTitleId ? TITLES.find(t => t.id === currentEquippedTitleId) : null;
+    const equippedTitleObj = currentEquippedTitleId ? TITLES.find((t) => t.id === currentEquippedTitleId) : null;
     const highestTitle = getHighestTitle(totalCoinsEarned);
-    const studentTitle = equippedTitleObj ? equippedTitleObj.name : (highestTitle ? highestTitle.name : "새내기");
+    const studentTitle = equippedTitleObj ? equippedTitleObj.name : (highestTitle ? highestTitle.name : "견습 기사");
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 pt-2 md:pt-3">
             <WeeklyRewardModalWrapper result={settlementResult} />
 
-            {/* Greeting Section */}
-            <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
                 <div>
-                    <h1 className="font-pixel text-2xl md:text-3xl font-bold leading-tight">
-                        반가워요, <span className="text-[#ff2e63]">{profile?.nickname || '학생'}</span>!
+                    <h1 className="font-pixel text-2xl font-bold leading-tight md:text-3xl">
+                        반가워요, <span className="text-[#ff2e63]">{profile?.nickname || "학생"}</span>!
                     </h1>
-                    <p className="font-bold text-gray-500 mt-1">오늘도 즐겁게 학습 게임을 시작해볼까요?</p>
+                    <p className="mt-1 font-bold text-gray-500">오늘도 즐겁게 학습 게임을 시작해볼까요?</p>
                 </div>
-                <div className="flex flex-col md:flex-row items-end gap-4">
+                <div className="flex flex-col items-end gap-4 md:flex-row">
                     <DailyCoinTracker />
-                    <div className="flex items-center gap-2 bg-[#fbbf24] px-4 py-2 border-4 border-black shadow-[4px_4px_0_0_black] rounded-lg">
+                    <div className="flex items-center gap-2 rounded-lg border-4 border-black bg-[#fbbf24] px-4 py-2 shadow-[4px_4px_0_0_black]">
                         <span className="text-xl">🪙</span>
-                        <span className="font-pixel font-bold text-lg">{(profile?.coin_balance || 0).toLocaleString()}</span>
+                        <span className="font-pixel text-lg font-bold">{(profile?.coin_balance || 0).toLocaleString()}</span>
                     </div>
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    {/* Status Cards Grid */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <div className="space-y-6 lg:col-span-2">
                     <DashboardCards
                         rank={rank}
                         level={level}
@@ -61,30 +95,25 @@ export default async function StudentDashboard() {
                         currentEquippedTitleId={currentEquippedTitleId}
                     />
 
-                    {/* Main Action Banner */}
-                    <Link href="/student/game" className="block relative group cursor-pointer hover:no-underline">
-                        <div className="absolute inset-0 bg-black rounded-lg translate-x-2 translate-y-2 group-hover:translate-x-3 group-hover:translate-y-3 transition-transform"></div>
-                        <div className="relative bg-[#b2c4ff] border-4 border-black rounded-lg p-6 md:p-8 flex items-center justify-between overflow-hidden group-hover:-translate-y-1 transition-transform">
-                            <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/pixel-weave.png')]"></div>
-
-                            <div className="z-10 relative">
-                                <span className="inline-block bg-[#ff2e63] text-white text-xs font-bold px-2 py-1 rounded border-2 border-black mb-2 shadow-[2px_2px_0_0_black]">
+                    <Link href="/student/game" className="group relative block cursor-pointer hover:no-underline">
+                        <div className="absolute inset-0 translate-x-2 translate-y-2 rounded-lg bg-black transition-transform group-hover:translate-x-3 group-hover:translate-y-3" />
+                        <div className="relative flex items-center justify-between overflow-hidden rounded-lg border-4 border-black bg-[#b2c4ff] p-6 transition-transform group-hover:-translate-y-1 md:p-8">
+                            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/pixel-weave.png')] opacity-10" />
+                            <div className="relative z-10">
+                                <span className="mb-2 inline-block rounded border-2 border-black bg-[#ff2e63] px-2 py-1 text-xs font-bold text-white shadow-[2px_2px_0_0_black]">
                                     ADVENTURE
                                 </span>
-                                <h2 className="font-pixel text-2xl md:text-3xl font-bold mb-2">학습 게임 시작하기</h2>
-                                <p className="font-bold text-slate-700 mb-4 max-w-sm">
-                                    다양한 미니 게임을 플레이하고 코인을 모으세요.
-                                    오늘의 퀴즈 세트가 당신을 기다리고 있습니다!
+                                <h2 className="mb-2 font-pixel text-2xl font-bold md:text-3xl">게임 플레이하러 가기</h2>
+                                <p className="mb-4 max-w-sm font-bold text-slate-700">
+                                    다양한 학습 게임을 플레이하고 점수와 코인을 획득해보세요.
                                 </p>
-                                <div className="inline-flex items-center justify-center h-10 px-4 py-2 bg-[#ff2e63] text-white font-bold rounded border-2 border-black shadow-[2px_2px_0_0_black] hover:translate-y-[-2px] hover:shadow-[4px_4px_0_0_black] transition-all">
-                                    게임 하러 가기 <ArrowRight className="ml-2 w-4 h-4" />
+                                <div className="inline-flex h-10 items-center justify-center rounded border-2 border-black bg-[#ff2e63] px-4 py-2 font-bold text-white shadow-[2px_2px_0_0_black] transition-all hover:translate-y-[-2px] hover:shadow-[4px_4px_0_0_black]">
+                                    시작하기 <ArrowRight className="ml-2 h-4 w-4" />
                                 </div>
                             </div>
-
-                            {/* Decorative Icon */}
-                            <div className="hidden md:flex items-center justify-center opacity-80 rotate-[-12deg] mr-8">
-                                <div className="w-32 h-32 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border-4 border-white">
-                                    <span className="text-6xl filter drop-shadow-[4px_4px_0_rgba(0,0,0,0.2)]">🎮</span>
+                            <div className="mr-8 hidden rotate-[-12deg] items-center justify-center opacity-80 md:flex">
+                                <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-white/20 backdrop-blur-sm">
+                                    <span className="text-6xl drop-shadow-[4px_4px_0_rgba(0,0,0,0.2)]">🎮</span>
                                 </div>
                             </div>
                         </div>
@@ -94,41 +123,40 @@ export default async function StudentDashboard() {
                 <div className="space-y-6">
                     <AttendanceButton />
 
-                    {/* Recent Activities moved to sidebar or below on mobile */}
                     <section>
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="font-pixel text-xl font-bold flex items-center gap-2">
-                                <span className="w-2 h-6 bg-[#08d9d6] border-2 border-black block shadow-[1px_1px_0_0_black]"></span>
+                        <div className="mb-4 flex items-center justify-between">
+                            <h2 className="flex items-center gap-2 font-pixel text-xl font-bold">
+                                <span className="block h-6 w-2 border-2 border-black bg-[#08d9d6] shadow-[1px_1px_0_0_black]" />
                                 최근 활동
                             </h2>
                         </div>
 
                         <div className="space-y-3">
-                            {activities.length === 0 ? (
-                                <div className="text-center py-6 bg-white border-4 border-dashed border-gray-200 rounded-lg text-gray-400 font-bold text-sm">
-                                    활동 내역이 없습니다.
+                            {(activities as Activity[]).length === 0 ? (
+                                <div className="rounded-lg border-4 border-dashed border-gray-200 bg-white py-6 text-center text-sm font-bold text-gray-400">
+                                    최근 활동 내역이 없습니다.
                                 </div>
                             ) : (
-                                (activities as any[]).map((activity) => (
-                                    <div key={activity.id} className="flex items-center justify-between bg-white border-2 border-black p-3 rounded-lg shadow-[2px_2px_0_0_rgba(0,0,0,0.1)] hover:shadow-[4px_4px_0_0_black] transition-all hover:-translate-y-0.5 cursor-default">
+                                (activities as Activity[]).map((activity) => (
+                                    <div
+                                        key={activity.id}
+                                        className="flex cursor-default items-center justify-between rounded-lg border-2 border-black bg-white p-3 shadow-[2px_2px_0_0_rgba(0,0,0,0.1)] transition-all hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_black]"
+                                    >
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 border-2 border-black rounded flex items-center justify-center font-bold text-lg shadow-[1px_1px_0_0_black] bg-[#e0fafa]">
-                                                🎮
+                                            <div className="flex h-10 w-10 items-center justify-center rounded border-2 border-black bg-[#e0fafa] text-lg font-bold shadow-[1px_1px_0_0_black]">
+                                                ⭐
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-sm leading-tight uppercase truncate w-32">
-                                                    {{
-                                                        'pixel-runner': '픽셀 러너',
-                                                        'history-quiz': '역사 퀴즈',
-                                                        'word-runner': '영단어 러너',
-                                                        'attendance': '출석 체크'
-                                                    }[activity.game_id] || activity.game_id}
+                                                <h3 className="w-32 truncate text-sm font-bold uppercase leading-tight">
+                                                    {GAME_LABELS[String(activity.game_id ?? "")] || String(activity.game_id ?? "UNKNOWN")}
                                                 </h3>
-                                                <p className="text-[10px] text-gray-400 font-bold">{new Date(activity.created_at || '').toLocaleDateString()}</p>
+                                                <p className="text-[10px] font-bold text-gray-400">
+                                                    {new Date(activity.created_at || "").toLocaleDateString()}
+                                                </p>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <p className="font-pixel font-bold text-sm">+{activity.coin_transactions?.[0]?.amount || 0}</p>
+                                            <p className="font-pixel text-sm font-bold">+{activity.coin_transactions?.[0]?.amount || 0}</p>
                                         </div>
                                     </div>
                                 ))

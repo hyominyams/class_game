@@ -4,8 +4,9 @@
 // 1. 코인 미지급 문제 해결: 보상 지급 시 코인 잔액 수동 업데이트 로직 추가됨 (Line 151)
 // 2. 지급 시기 설정: 매주 월요일 오전 8시 40분 체크 로직 추가됨 (Line 37)
 
-import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getWeeklyRewardByRank, isRankingEligibleReason } from '@/app/constants/economy';
+import { requireActor } from './security/guards';
 
 export type WeeklySettlementResult = {
     settled: boolean;
@@ -16,17 +17,16 @@ export type WeeklySettlementResult = {
 };
 
 export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementResult> {
-    const supabase = await createClient();
-    const adminClient = createAdminClient();
+    const actorResult = await requireActor(['student']);
+    if (!actorResult.ok) return { settled: false };
 
-    // 1. Get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { settled: false };
+    const { actor, supabase } = actorResult;
+    const adminClient = createAdminClient();
 
     const { data: profile } = await supabase
         .from('profiles')
         .select('id, grade, class, coin_balance, last_weekly_settlement')
-        .eq('id', user.id)
+        .eq('id', actor.userId)
         .single();
 
     if (!profile || !profile.grade || !profile.class) return { settled: false };
@@ -81,7 +81,7 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
     // Fetch transactions for last week
     const { data: transactions } = await adminClient
         .from('coin_transactions')
-        .select('user_id, amount')
+        .select('user_id, amount, reason')
         .in('user_id', studentIds)
         .gte('created_at', lastWeekStart.toISOString())
         .lt('created_at', lastWeekEnd.toISOString())
@@ -89,7 +89,9 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
 
     // Aggregate scores
     const scoresMap: Record<string, number> = {};
-    transactions?.forEach(tx => {
+    transactions
+        ?.filter(tx => isRankingEligibleReason(tx.reason))
+        .forEach(tx => {
         scoresMap[tx.user_id] = (scoresMap[tx.user_id] || 0) + tx.amount;
     });
 
@@ -98,41 +100,22 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
         .map(id => ({ id, points: scoresMap[id] || 0 }))
         .sort((a, b) => b.points - a.points); // Descending
 
-    const userRankIndex = rankedUsers.findIndex(u => u.id === user.id);
+    const userRankIndex = rankedUsers.findIndex(u => u.id === actor.userId);
     if (userRankIndex === -1) return { settled: false };
 
     const rank = userRankIndex + 1;
 
-    // 4. Determine Tier & Reward
-    // - Diamond: 1st
-    // - Platinum: 2nd
-    // - Gold: 3-7th
-    // - Silver: 8-16th
-    // - Bronze: 17th+
-
-    let tier = 'Bronze';
-    let rewardAmount = 30;
-
-    if (rank === 1) {
-        tier = 'Diamond';
-        rewardAmount = 500;
-    } else if (rank === 2) {
-        tier = 'Platinum';
-        rewardAmount = 300;
-    } else if (rank >= 3 && rank <= 7) {
-        tier = 'Gold';
-        rewardAmount = 150;
-    } else if (rank >= 8 && rank <= 16) {
-        tier = 'Silver';
-        rewardAmount = 80;
-    }
+    // 4. Determine tier/reward from centralized economy rules
+    const rewardRule = getWeeklyRewardByRank(rank);
+    const tier = rewardRule.tier;
+    const rewardAmount = rewardRule.amount;
 
     // 5. Grant Reward
     if (rewardAmount > 0) {
         // Insert transaction
         // Correcting field name: 'description' -> 'reason' based on Supabase schema
         const { error: txError } = await adminClient.from('coin_transactions').insert({
-            user_id: user.id,
+            user_id: actor.userId,
             amount: rewardAmount,
             reason: `주간 랭킹 보상 (${tier} - ${rank}위)`,
         });
@@ -147,7 +130,7 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
         const { data: latestProfile } = await adminClient
             .from('profiles')
             .select('coin_balance')
-            .eq('id', user.id)
+            .eq('id', actor.userId)
             .single();
 
         const currentBalance = latestProfile?.coin_balance || 0;
@@ -155,14 +138,14 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
         await adminClient
             .from('profiles')
             .update({ coin_balance: currentBalance + rewardAmount })
-            .eq('id', user.id);
+            .eq('id', actor.userId);
     }
 
     // 6. Update last_weekly_settlement
     await adminClient
         .from('profiles')
         .update({ last_weekly_settlement: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('id', actor.userId);
 
     return {
         settled: true,

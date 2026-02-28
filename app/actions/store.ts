@@ -1,111 +1,295 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { Database } from '@/types/supabase'
+import { getStoreItemById } from '@/app/constants/store-items'
 
-export async function purchaseItem(
-    itemId: string,
-    price: number,
-    itemName: string
-) {
-    const supabase = await createClient() as any
+const MAX_PURCHASE_RETRIES = 4
+type AdminClient = ReturnType<typeof createAdminClient>
+type LooseRpcError = { code?: string; message?: string } | null
 
-    // 1. Authenticate User
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-        return { success: false, error: 'Unauthorized' }
-    }
+type PurchaseItemSuccess = {
+    success: true
+    newBalance: number
+    itemId: string
+    quantity: number
+    message?: string
+}
 
-    try {
-        // 2. Get User Profile to check balance
-        const { data: profile, error: profileFetchError } = await supabase
-            .from('profiles')
-            .select('coin_balance')
-            .eq('id', user.id)
-            .single()
+type PurchaseItemFailure = {
+    success: false
+    error: string
+    itemId?: string
+}
 
-        if (profileFetchError || !profile) {
-            throw new Error('Could not fetch user profile')
-        }
+export type PurchaseItemResult = PurchaseItemSuccess | PurchaseItemFailure
 
-        const currentBalance = profile.coin_balance || 0
+function isRpcMissingError(error: LooseRpcError) {
+    if (!error) return false
+    return error.code === 'PGRST202' || (error.message || '').includes('purchase_item_atomic')
+}
 
-        // 3. Validate Balance
-        if (currentBalance < price) {
-            return { success: false, error: '코인이 부족합니다!' }
-        }
+async function restoreBalance(adminClient: AdminClient, userId: string, amount: number) {
+    const { error: rpcError } = await adminClient.rpc('increment_coin_balance', {
+        user_id_arg: userId,
+        amount_arg: amount,
+    })
 
-        // 4. Execute Purchase (Deduct Coins + Record Transaction + Add Item)
-        // Since we don't have a multi-table transaction in Supabase JS client easily,
-        // we'll do it sequentially. In a real production app, an RPC would be safer.
+    if (!rpcError) return
 
-        // 4a. Deduct Balance
-        const newBalance = currentBalance - price
-        const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ coin_balance: newBalance })
-            .eq('id', user.id)
+    const { data: profile } = await adminClient
+        .from('profiles')
+        .select('coin_balance')
+        .eq('id', userId)
+        .single()
 
-        if (updateError) throw updateError
+    const currentBalance = profile?.coin_balance || 0
+    await adminClient
+        .from('profiles')
+        .update({ coin_balance: currentBalance + amount })
+        .eq('id', userId)
+}
 
-        // 4b. Record Transaction
-        const transactionData: Database['public']['Tables']['coin_transactions']['Insert'] = {
-            user_id: user.id,
-            amount: -price,
-            reason: `PURCHASE:${itemId}`,
-        }
-        const { error: txError } = await supabase
-            .from('coin_transactions')
-            .insert(transactionData)
-
-        if (txError) {
-            // Rollback balance (best effort)
-            await supabase.from('profiles').update({ coin_balance: currentBalance }).eq('id', user.id)
-            throw txError
-        }
-
-        // 4c. Add/Update Item in student_items
-        // We use upsert to increment quantity if they buy the same item again
-        const { data: existingItem } = await supabase
+async function incrementItemQuantitySafely(adminClient: AdminClient, userId: string, itemId: string, itemName: string) {
+    for (let attempt = 0; attempt < MAX_PURCHASE_RETRIES; attempt++) {
+        const { data: existingItem, error: existingError } = await adminClient
             .from('student_items')
             .select('quantity')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .eq('item_id', itemId)
             .maybeSingle()
 
-        if (existingItem) {
-            const { error: itemUpdateError } = await supabase
-                .from('student_items')
-                .update({ quantity: existingItem.quantity + 1 })
-                .eq('user_id', user.id)
-                .eq('item_id', itemId)
-            if (itemUpdateError) throw itemUpdateError
-        } else {
-            const { error: itemInsertError } = await supabase
-                .from('student_items')
-                .insert({
-                    user_id: user.id,
-                    item_id: itemId,
-                    item_name: itemName,
-                    quantity: 1
-                })
-            if (itemInsertError) throw itemInsertError
+        if (existingError && existingError.code !== 'PGRST116') {
+            return { quantity: 0, error: existingError.message }
         }
 
-        revalidatePath('/student/store')
-        revalidatePath('/student/dashboard')
+        if (!existingItem) {
+            const { data: inserted, error: insertError } = await adminClient
+                .from('student_items')
+                .insert({
+                    user_id: userId,
+                    item_id: itemId,
+                    item_name: itemName,
+                    quantity: 1,
+                })
+                .select('quantity')
+                .maybeSingle()
+
+            if (!insertError && inserted) {
+                return { quantity: inserted.quantity || 1, error: null }
+            }
+
+            if (insertError?.code === '23505') {
+                continue
+            }
+
+            return { quantity: 0, error: insertError?.message || 'Failed to insert inventory item.' }
+        }
+
+        const currentQuantity = existingItem.quantity || 0
+        const nextQuantity = currentQuantity + 1
+
+        const { data: updated, error: updateError } = await adminClient
+            .from('student_items')
+            .update({
+                quantity: nextQuantity,
+                item_name: itemName,
+            })
+            .eq('user_id', userId)
+            .eq('item_id', itemId)
+            .eq('quantity', currentQuantity)
+            .select('quantity')
+            .maybeSingle()
+
+        if (updateError && updateError.code !== 'PGRST116') {
+            return { quantity: 0, error: updateError.message }
+        }
+
+        if (updated) {
+            return { quantity: updated.quantity || nextQuantity, error: null }
+        }
+    }
+
+    return { quantity: 0, error: 'Concurrent update conflict. Please retry.' }
+}
+
+function normalizeRpcPurchaseResult(payload: unknown, itemId: string): PurchaseItemResult | null {
+    const rawRow = Array.isArray(payload) ? payload[0] : payload
+    if (!rawRow || typeof rawRow !== 'object') return null
+    const row = rawRow as Record<string, unknown>
+
+    if (row.success === false) {
+        return { success: false, itemId, error: typeof row.error === 'string' ? row.error : 'Purchase failed.' }
+    }
+
+    if (row.success === true || typeof row.new_balance === 'number' || typeof row.newBalance === 'number') {
+        const newBalance = Number(row.new_balance ?? row.newBalance)
+        const quantity = Number(row.quantity ?? 1)
+        if (!Number.isFinite(newBalance)) return null
+
+        return {
+            success: true,
+            itemId,
+            newBalance,
+            quantity: Number.isFinite(quantity) ? quantity : 1,
+        }
+    }
+
+    return null
+}
+
+async function purchaseWithFallback(userId: string, itemId: string, itemName: string, price: number): Promise<PurchaseItemResult> {
+    const adminClient = createAdminClient()
+
+    for (let attempt = 0; attempt < MAX_PURCHASE_RETRIES; attempt++) {
+        const { data: profile, error: profileFetchError } = await adminClient
+            .from('profiles')
+            .select('coin_balance')
+            .eq('id', userId)
+            .single()
+
+        if (profileFetchError || !profile) {
+            return { success: false, itemId, error: 'Could not fetch user profile.' }
+        }
+
+        const currentBalance = profile.coin_balance || 0
+        if (currentBalance < price) {
+            return { success: false, itemId, error: 'Insufficient coin balance.' }
+        }
+
+        // Optimistic lock: only deduct when the observed balance is unchanged.
+        const { data: updatedProfile, error: balanceUpdateError } = await adminClient
+            .from('profiles')
+            .update({ coin_balance: currentBalance - price })
+            .eq('id', userId)
+            .eq('coin_balance', currentBalance)
+            .select('coin_balance')
+            .maybeSingle()
+
+        if (balanceUpdateError) {
+            return { success: false, itemId, error: balanceUpdateError.message }
+        }
+
+        if (!updatedProfile) {
+            continue
+        }
+
+        const newBalance = updatedProfile.coin_balance ?? (currentBalance - price)
+
+        const { error: transactionError } = await adminClient
+            .from('coin_transactions')
+            .insert({
+                user_id: userId,
+                reason: `PURCHASE:${itemId}`,
+                amount: -price,
+            })
+
+        if (transactionError) {
+            await restoreBalance(adminClient, userId, price)
+            return { success: false, itemId, error: 'Failed to record purchase transaction.' }
+        }
+
+        const inventoryUpdate = await incrementItemQuantitySafely(adminClient, userId, itemId, itemName)
+        if (inventoryUpdate.error) {
+            await restoreBalance(adminClient, userId, price)
+            await adminClient.from('coin_transactions').insert({
+                user_id: userId,
+                reason: `PURCHASE_ROLLBACK:${itemId}`,
+                amount: price,
+            })
+            return { success: false, itemId, error: inventoryUpdate.error }
+        }
 
         return {
             success: true,
             newBalance,
-            message: `${itemName} 구매 완료!`
+            itemId,
+            quantity: inventoryUpdate.quantity,
+            message: `${itemName} purchase complete.`,
+        }
+    }
+
+    return { success: false, itemId, error: 'Concurrent purchase conflict. Please retry.' }
+}
+
+export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> {
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+        return { success: false, itemId, error: 'Unauthorized' }
+    }
+
+    const item = getStoreItemById(itemId)
+    if (!item) {
+        return { success: false, itemId, error: 'Invalid item id.' }
+    }
+
+    // Primary path: atomic RPC (implemented by DB owner migration flow).
+    const rpcClient = supabase as unknown as {
+        rpc: (
+            fn: string,
+            params?: Record<string, unknown>
+        ) => Promise<{ data: unknown; error: LooseRpcError }>
+    }
+    const { data: rpcData, error: rpcError } = await rpcClient.rpc('purchase_item_atomic', {
+        p_user_id: user.id,
+        p_item_id: itemId,
+        p_item_name: item.name,
+        p_price: item.price,
+    })
+
+    if (!rpcError) {
+        const normalized = normalizeRpcPurchaseResult(rpcData, itemId)
+        if (normalized) {
+            if (normalized.success) {
+                revalidatePath('/student/store')
+                revalidatePath('/student/dashboard')
+            }
+            return normalized
         }
 
-    } catch (error) {
-        console.error('purchaseItem Error:', error)
-        return { success: false, error: '구매 처리 중 오류가 발생했습니다.' }
+        const [{ data: profile }, { data: inventory }] = await Promise.all([
+            supabase
+                .from('profiles')
+                .select('coin_balance')
+                .eq('id', user.id)
+                .single(),
+            supabase
+                .from('student_items')
+                .select('quantity')
+                .eq('user_id', user.id)
+                .eq('item_id', itemId)
+                .maybeSingle(),
+        ])
+
+        const newBalance = profile?.coin_balance
+        if (typeof newBalance === 'number') {
+            revalidatePath('/student/store')
+            revalidatePath('/student/dashboard')
+            return {
+                success: true,
+                newBalance,
+                itemId,
+                quantity: inventory?.quantity || 1,
+                message: `${item.name} purchase complete.`,
+            }
+        }
     }
+
+    if (rpcError && !isRpcMissingError(rpcError)) {
+        return { success: false, itemId, error: rpcError.message || 'Atomic purchase RPC failed.' }
+    }
+
+    const fallbackResult = await purchaseWithFallback(user.id, itemId, item.name, item.price)
+
+    if (fallbackResult.success) {
+        revalidatePath('/student/store')
+        revalidatePath('/student/dashboard')
+    }
+
+    return fallbackResult
 }
 
 export async function getUserCoins() {
