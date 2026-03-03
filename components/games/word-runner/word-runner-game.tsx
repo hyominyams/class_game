@@ -32,6 +32,7 @@ type AssetKey =
     | "effectKill";
 
 type AnimatedEnemyAssetKey = "enemyZombie" | "enemyBat" | "enemyTank" | "boss";
+type StaticAssetKey = Exclude<AssetKey, AnimatedEnemyAssetKey>;
 type WordQuestionMode = "en_to_ko" | "ko_to_en" | "mixed";
 
 interface EnemySpriteSheetMeta {
@@ -104,7 +105,7 @@ const START_TIME = 120;
 const WAVE_SECONDS = 15;
 const SHIELD_MAX_CHARGE = 8;
 const SHIELD_DURATION_SEC = 6;
-const ENEMY_SPRITE_PLAYBACK_RATE = 5;
+const ENEMY_SPRITE_PLAYBACK_RATE = 7.5;
 const MAX_REGULAR_ENEMIES_ON_FIELD = 4;
 const CANVAS_FONT_WORD = "bold 15px 'Press Start 2P', 'DungGeunMo', 'Malgun Gothic', sans-serif";
 const CANVAS_FONT_HUD = "bold 12px 'Press Start 2P', 'DungGeunMo', 'Malgun Gothic', sans-serif";
@@ -115,17 +116,13 @@ const CANVAS_HEIGHT = 540;
 const PATH_Y = 430;
 const CASTLE_HIT_X = 188;
 
-const ASSET_PATHS: Record<AssetKey, string> = {
+const ASSET_PATHS: Record<StaticAssetKey, string> = {
     bgSky: "/bg-sky.png",
     bgMain: "/bg-main.png",
     castle1: "/castle1.png",
     castle2: "/castle2.png",
     castle3: "/castle3.png",
     castleBarrier: "/castle-barrier.png",
-    enemyZombie: "/enemy-zombie.png",
-    enemyBat: "/enemy-bat.png",
-    enemyTank: "/enemy-tank.png",
-    boss: "/boss.png",
     effectCorrect: "/effect-correct.png",
     effectHit: "/effect-hit.png",
     effectKill: "/effect-kill.png",
@@ -419,7 +416,9 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
 
         const loadAssets = async () => {
             const entries = await Promise.all(
-                Object.entries(ASSET_PATHS).map(async ([key, src]) => [key as AssetKey, await loadImageAsset(src)] as const),
+                Object.entries(ASSET_PATHS).map(
+                    async ([key, src]) => [key as StaticAssetKey, await loadImageAsset(src)] as const,
+                ),
             );
 
             if (cancelled) return;
@@ -445,16 +444,21 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
 
         const loadSpriteAnimations = async () => {
             const animationMap: Partial<Record<AnimatedEnemyAssetKey, EnemySpriteAnimation>> = {};
+            const nextAssets = { ...assetsRef.current };
 
             await Promise.all(
                 ANIMATED_ENEMY_ASSET_KEYS.map(async (key) => {
                     try {
-                        const [metaResponse, sheetImage] = await Promise.all([
-                            fetch(ENEMY_SPRITE_PATHS[key].meta, { cache: "force-cache" }),
-                            loadImageAsset(ENEMY_SPRITE_PATHS[key].image),
-                        ]);
+                        const sheetImage = await loadImageAsset(ENEMY_SPRITE_PATHS[key].image);
+                        if (sheetImage) {
+                            // Reuse the loaded sprite sheet as static fallback to avoid duplicate image downloads.
+                            nextAssets[key] = sheetImage;
+                        }
 
-                        if (!metaResponse.ok || !sheetImage) return;
+                        if (!sheetImage) return;
+
+                        const metaResponse = await fetch(ENEMY_SPRITE_PATHS[key].meta, { cache: "force-cache" });
+                        if (!metaResponse.ok) return;
 
                         const meta = (await metaResponse.json()) as EnemySpriteSheetMeta;
                         const frameCount = Math.max(1, Number(meta.frameCount) || 1);
@@ -483,6 +487,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             );
 
             if (cancelled) return;
+            assetsRef.current = nextAssets;
             enemySpriteAnimationsRef.current = animationMap;
         };
 
