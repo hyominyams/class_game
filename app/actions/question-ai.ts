@@ -98,11 +98,12 @@ function parseRequest(input: GenerateQuestionsWithAIInput): ParsedRequest {
     }
 
     const topicMode: AiTopicMode = input.topicMode === "general" ? "general" : "default";
+    const defaultTopic = getDefaultTopicForGame(gameId);
     const providedTopic = normalizeText(input.topic);
-    const topic = topicMode === "default" ? getDefaultTopicForGame(gameId) : providedTopic;
+    const topic = providedTopic || defaultTopic;
 
-    if (topicMode === "general" && !topic) {
-        throw new Error("General 주제를 입력해 주세요.");
+    if (topicMode === "general" && !providedTopic) {
+        throw new Error("General topic is required.");
     }
 
     return {
@@ -130,7 +131,7 @@ function ensureDifficultyDistribution(
         actual.medium !== counts.medium ||
         actual.low !== counts.low
     ) {
-        throw new Error("AI 응답의 난이도별 문항 수가 요청값과 일치하지 않습니다.");
+        throw new Error("AI difficulty distribution does not match the request.");
     }
 }
 
@@ -139,7 +140,7 @@ function ensureDistinctByKey<T>(rows: T[], keyFn: (row: T) => string, label: str
     for (const row of rows) {
         const key = keyFn(row);
         if (seen.has(key)) {
-            throw new Error(`AI가 중복된 ${label}을 생성했습니다. 다시 시도해 주세요.`);
+            throw new Error(`AI generated duplicate ${label}. Please try again.`);
         }
         seen.add(key);
     }
@@ -173,9 +174,7 @@ async function requestJsonFromOpenAI(systemPrompt: string, userPrompt: string): 
     const payload = (await response.json().catch(() => null)) as OpenAIChatCompletionResponse | null;
 
     if (!response.ok) {
-        const apiError =
-            payload?.error?.message ||
-            `OpenAI request failed with status ${response.status}.`;
+        const apiError = payload?.error?.message || `OpenAI request failed with status ${response.status}.`;
         throw new Error(apiError);
     }
 
@@ -193,9 +192,9 @@ async function requestJsonFromOpenAI(systemPrompt: string, userPrompt: string): 
 
 function buildDifficultyGuide(counts: DifficultyCounts) {
     return [
-        `- high: ${counts.high}개 (중학교 수준)`,
-        `- medium: ${counts.medium}개 (초등학교 고학년 수준)`,
-        `- low: ${counts.low}개 (초등학교 저학년 수준)`,
+        `- high: ${counts.high}`,
+        `- medium: ${counts.medium}`,
+        `- low: ${counts.low}`,
     ].join("\n");
 }
 
@@ -206,46 +205,49 @@ async function generateWordRunnerQuestions(request: ParsedRequest): Promise<Word
     ].join(" ");
 
     const userPrompt = [
-        `게임: word-runner`,
-        `주제: ${request.topic}`,
-        `총 문항: ${request.totalQuestions}`,
-        "난이도 분배:",
+        "Game: word-runner",
+        `Requested topic: ${request.topic}`,
+        "Every question must be tightly scoped to the requested topic text above.",
+        `Total questions: ${request.totalQuestions}`,
+        "Difficulty distribution:",
         buildDifficultyGuide(request.counts),
-        "JSON 형식:",
+        "JSON format:",
         '{"questions":[{"difficulty":"low|medium|high","english":"...","korean":"..."}]}',
-        "규칙:",
-        "- 정확히 총 문항 수만 생성할 것",
-        "- 난이도 분배를 정확히 맞출 것",
-        "- english는 소문자 기준 단어/짧은 구문(최대 3단어)",
-        "- korean은 자연스러운 한국어 뜻",
-        "- 중복 금지",
-        "- 욕설/정치/성인/폭력적 소재 금지",
+        "Rules:",
+        "- Return exactly the requested number of questions.",
+        "- Match the requested difficulty distribution exactly.",
+        "- Keep each english value to a short classroom-safe word or phrase (max 3 words).",
+        "- Provide natural Korean meaning for each english value.",
+        "- No duplicates.",
+        "- No political, sexual, hate, violent, or age-inappropriate content.",
     ].join("\n");
 
     const raw = await requestJsonFromOpenAI(systemPrompt, userPrompt);
     const rows = Array.isArray((raw as { questions?: unknown[] }).questions)
-        ? ((raw as { questions: unknown[] }).questions)
+        ? (raw as { questions: unknown[] }).questions
         : [];
 
-    const normalized = rows.map((item) => {
-        const row = item as { difficulty?: unknown; english?: unknown; korean?: unknown };
-        const difficulty = normalizeDifficulty(row.difficulty);
-        const english = normalizeText(row.english);
-        const korean = normalizeText(row.korean);
+    const normalized = rows
+        .map((item) => {
+            const row = item as { difficulty?: unknown; english?: unknown; korean?: unknown };
+            const difficulty = normalizeDifficulty(row.difficulty);
+            const english = normalizeText(row.english);
+            const korean = normalizeText(row.korean);
 
-        if (!difficulty || !english || !korean) {
-            return null;
-        }
+            if (!difficulty || !english || !korean) {
+                return null;
+            }
 
-        return { difficulty, english, korean };
-    }).filter((item): item is { difficulty: keyof DifficultyCounts; english: string; korean: string } => Boolean(item));
+            return { difficulty, english, korean };
+        })
+        .filter((item): item is { difficulty: keyof DifficultyCounts; english: string; korean: string } => Boolean(item));
 
     if (normalized.length !== request.totalQuestions) {
-        throw new Error("AI 응답 문항 수가 요청값과 다릅니다.");
+        throw new Error("AI response question count does not match the request.");
     }
 
     ensureDifficultyDistribution(request.counts, normalized);
-    ensureDistinctByKey(normalized, (row) => `${row.english.toLowerCase()}::${row.korean}`, "단어");
+    ensureDistinctByKey(normalized, (row) => `${row.english.toLowerCase()}::${row.korean}`, "vocabulary");
 
     return normalized.map((row) => ({ english: row.english, korean: row.korean }));
 }
@@ -257,77 +259,79 @@ async function generateWordChainQuestions(request: ParsedRequest): Promise<WordC
     ].join(" ");
 
     const userPrompt = [
-        `게임: word-chain`,
-        `주제: ${request.topic}`,
-        `총 문항: ${request.totalQuestions}`,
-        "난이도 분배:",
+        "Game: word-chain",
+        `Requested topic: ${request.topic}`,
+        "Every question must be tightly scoped to the requested topic text above.",
+        `Total questions: ${request.totalQuestions}`,
+        "Difficulty distribution:",
         buildDifficultyGuide(request.counts),
-        "JSON 형식:",
+        "JSON format:",
         '{"questions":[{"difficulty":"low|medium|high","prompt":"...","answer":"...","acceptedAnswers":["..."]}]}',
-        "규칙:",
-        "- 정확히 총 문항 수만 생성할 것",
-        "- 난이도 분배를 정확히 맞출 것",
-        "- acceptedAnswers에는 정답(answer)을 포함할 것",
-        "- acceptedAnswers는 1~4개",
-        "- 중복 금지",
-        "- 기본 주제가 영어일 때 prompt는 한국어 뜻/설명, answer는 영어 단어/표현",
-        "- 욕설/정치/성인/폭력적 소재 금지",
+        "Rules:",
+        "- Return exactly the requested number of questions.",
+        "- Match the requested difficulty distribution exactly.",
+        "- acceptedAnswers must include answer.",
+        "- acceptedAnswers length must be 1 to 4.",
+        "- No duplicates.",
+        "- No political, sexual, hate, violent, or age-inappropriate content.",
     ].join("\n");
 
     const raw = await requestJsonFromOpenAI(systemPrompt, userPrompt);
     const rows = Array.isArray((raw as { questions?: unknown[] }).questions)
-        ? ((raw as { questions: unknown[] }).questions)
+        ? (raw as { questions: unknown[] }).questions
         : [];
 
-    const normalized = rows.map((item) => {
-        const row = item as {
-            difficulty?: unknown;
-            prompt?: unknown;
-            answer?: unknown;
-            acceptedAnswers?: unknown;
-        };
+    const normalized = rows
+        .map((item) => {
+            const row = item as {
+                difficulty?: unknown;
+                prompt?: unknown;
+                answer?: unknown;
+                acceptedAnswers?: unknown;
+            };
 
-        const difficulty = normalizeDifficulty(row.difficulty);
-        const prompt = normalizeText(row.prompt);
-        const answer = normalizeText(row.answer);
+            const difficulty = normalizeDifficulty(row.difficulty);
+            const prompt = normalizeText(row.prompt);
+            const answer = normalizeText(row.answer);
 
-        const acceptedAnswersRaw = Array.isArray(row.acceptedAnswers)
-            ? row.acceptedAnswers
-            : [];
+            const acceptedAnswersRaw = Array.isArray(row.acceptedAnswers) ? row.acceptedAnswers : [];
+            const acceptedAnswers = acceptedAnswersRaw
+                .map((value) => normalizeText(value))
+                .filter(Boolean);
 
-        const acceptedAnswers = acceptedAnswersRaw
-            .map((value) => normalizeText(value))
-            .filter(Boolean);
+            if (!difficulty || !prompt || !answer) {
+                return null;
+            }
 
-        if (!difficulty || !prompt || !answer) {
-            return null;
-        }
+            const combinedAnswers = Array.from(new Set([answer, ...acceptedAnswers])).slice(0, 4);
+            if (combinedAnswers.length === 0) {
+                return null;
+            }
 
-        const combinedAnswers = Array.from(new Set([answer, ...acceptedAnswers])).slice(0, 4);
-
-        if (combinedAnswers.length === 0) {
-            return null;
-        }
-
-        return {
-            difficulty,
-            prompt,
-            answer,
-            acceptedAnswers: combinedAnswers,
-        };
-    }).filter((item): item is {
-        difficulty: keyof DifficultyCounts;
-        prompt: string;
-        answer: string;
-        acceptedAnswers: string[];
-    } => Boolean(item));
+            return {
+                difficulty,
+                prompt,
+                answer,
+                acceptedAnswers: combinedAnswers,
+            };
+        })
+        .filter((item): item is {
+            difficulty: keyof DifficultyCounts;
+            prompt: string;
+            answer: string;
+            acceptedAnswers: string[];
+        } => Boolean(item));
 
     if (normalized.length !== request.totalQuestions) {
-        throw new Error("AI 응답 문항 수가 요청값과 다릅니다.");
+        throw new Error("AI response question count does not match the request.");
     }
 
     ensureDifficultyDistribution(request.counts, normalized);
-    ensureDistinctByKey(normalized, (row) => `${row.prompt.toLowerCase()}::${row.answer.toLowerCase()}`, "문항");
+    ensureDistinctByKey(
+        normalized,
+        (row) => `${row.prompt.toLowerCase()}::${row.answer.toLowerCase()}`,
+        "question"
+    );
 
     return normalized.map((row) => ({
         prompt: row.prompt,
@@ -345,106 +349,110 @@ async function generateHistoryQuestions(request: ParsedRequest): Promise<History
     ].join(" ");
 
     const userPrompt = [
-        `게임: ${request.gameId}`,
-        `주제: ${request.topic}`,
-        `총 문항: ${request.totalQuestions}`,
-        `문항 타입: ${forceMultipleChoice ? "multiple-choice only" : "multiple-choice + short-answer allowed"}`,
-        "난이도 분배:",
+        `Game: ${request.gameId}`,
+        `Requested topic: ${request.topic}`,
+        "Every question must be tightly scoped to the requested topic text above.",
+        `Total questions: ${request.totalQuestions}`,
+        `Question type rule: ${forceMultipleChoice ? "multiple-choice only" : "multiple-choice + short-answer allowed"}`,
+        "Difficulty distribution:",
         buildDifficultyGuide(request.counts),
-        "JSON 형식:",
+        "JSON format:",
         '{"questions":[{"difficulty":"low|medium|high","type":"multiple-choice|short-answer","text":"...","options":["...","...","...","..."],"answerIndex":0,"answerText":"..."}]}',
-        "규칙:",
-        "- 정확히 총 문항 수만 생성할 것",
-        "- 난이도 분배를 정확히 맞출 것",
-        "- multiple-choice: options 4개 필수, answerIndex(0~3) 필수",
-        "- short-answer: answerText 필수, options는 빈 배열 허용",
-        forceMultipleChoice ? "- 이 요청에서는 short-answer 금지" : "- total >= 6 이면 short-answer 최소 1개 포함",
-        "- 중복 금지",
-        "- 욕설/정치/성인/폭력적 소재 금지",
+        "Rules:",
+        "- Return exactly the requested number of questions.",
+        "- Match the requested difficulty distribution exactly.",
+        "- multiple-choice: options must be 4 and answerIndex must be 0..3.",
+        "- short-answer: answerText is required and options may be empty.",
+        forceMultipleChoice
+            ? "- short-answer is not allowed for this game."
+            : "- if total questions >= 6, include at least one short-answer question.",
+        "- No duplicates.",
+        "- No political, sexual, hate, violent, or age-inappropriate content.",
     ].join("\n");
 
     const raw = await requestJsonFromOpenAI(systemPrompt, userPrompt);
     const rows = Array.isArray((raw as { questions?: unknown[] }).questions)
-        ? ((raw as { questions: unknown[] }).questions)
+        ? (raw as { questions: unknown[] }).questions
         : [];
 
-    const normalized = rows.map((item) => {
-        const row = item as {
-            difficulty?: unknown;
-            type?: unknown;
-            text?: unknown;
-            options?: unknown;
-            answerIndex?: unknown;
-            answerText?: unknown;
-        };
+    const normalized = rows
+        .map((item) => {
+            const row = item as {
+                difficulty?: unknown;
+                type?: unknown;
+                text?: unknown;
+                options?: unknown;
+                answerIndex?: unknown;
+                answerText?: unknown;
+            };
 
-        const difficulty = normalizeDifficulty(row.difficulty);
-        const text = normalizeText(row.text);
-        const rawType = normalizeText(row.type);
-        const type: HistoryQuestionType =
-            rawType === "short-answer" ? "short-answer" : "multiple-choice";
+            const difficulty = normalizeDifficulty(row.difficulty);
+            const text = normalizeText(row.text);
+            const rawType = normalizeText(row.type);
+            const type: HistoryQuestionType = rawType === "short-answer" ? "short-answer" : "multiple-choice";
 
-        if (!difficulty || !text) {
-            return null;
-        }
-
-        if (forceMultipleChoice && type !== "multiple-choice") {
-            return null;
-        }
-
-        if (type === "multiple-choice") {
-            const optionsRaw = Array.isArray(row.options) ? row.options : [];
-            const options = optionsRaw
-                .map((value) => normalizeText(value))
-                .filter(Boolean)
-                .slice(0, 4);
-
-            const answerIndex = Number(row.answerIndex);
-            if (options.length !== 4 || !Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
+            if (!difficulty || !text) {
                 return null;
             }
 
-            const optionTuple: [string, string, string, string] = [
-                options[0],
-                options[1],
-                options[2],
-                options[3],
-            ];
+            if (forceMultipleChoice && type !== "multiple-choice") {
+                return null;
+            }
+
+            if (type === "multiple-choice") {
+                const optionsRaw = Array.isArray(row.options) ? row.options : [];
+                const options = optionsRaw
+                    .map((value) => normalizeText(value))
+                    .filter(Boolean)
+                    .slice(0, 4);
+
+                const answerIndex = Number(row.answerIndex);
+                if (options.length !== 4 || !Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
+                    return null;
+                }
+
+                const optionTuple: [string, string, string, string] = [
+                    options[0],
+                    options[1],
+                    options[2],
+                    options[3],
+                ];
+
+                return {
+                    difficulty,
+                    text,
+                    type,
+                    options: optionTuple,
+                    answer: answerIndex,
+                };
+            }
+
+            const answerText = normalizeText(row.answerText);
+            if (!answerText) {
+                return null;
+            }
 
             return {
                 difficulty,
                 text,
                 type,
-                options: optionTuple,
-                answer: answerIndex,
+                options: ["", "", "", ""] as [string, string, string, string],
+                answer: answerText,
             };
-        }
-
-        const answerText = normalizeText(row.answerText);
-        if (!answerText) {
-            return null;
-        }
-
-        return {
-            difficulty,
-            text,
-            type,
-            options: ["", "", "", ""] as [string, string, string, string],
-            answer: answerText,
-        };
-    }).filter((item): item is NonNullable<typeof item> => item !== null);
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
 
     if (normalized.length !== request.totalQuestions) {
-        throw new Error("AI 응답 문항 수가 요청값과 다릅니다.");
+        throw new Error("AI response question count does not match the request.");
     }
 
     ensureDifficultyDistribution(request.counts, normalized);
-    ensureDistinctByKey(normalized, (row) => row.text.toLowerCase(), "문제");
+    ensureDistinctByKey(normalized, (row) => row.text.toLowerCase(), "question");
 
     if (!forceMultipleChoice && request.totalQuestions >= 6) {
         const shortAnswerCount = normalized.filter((row) => row.type === "short-answer").length;
         if (shortAnswerCount < 1) {
-            throw new Error("AI 응답에 단답형 문항이 부족합니다. 다시 시도해 주세요.");
+            throw new Error("AI response must include at least one short-answer question.");
         }
     }
 
@@ -466,7 +474,7 @@ export async function generateQuestionsWithAI(input: GenerateQuestionsWithAIInpu
     try {
         request = parseRequest(input);
     } catch (error) {
-        const message = error instanceof Error ? error.message : "요청값이 올바르지 않습니다.";
+        const message = error instanceof Error ? error.message : "Invalid AI generation request.";
         return { success: false, error: message };
     }
 
@@ -490,10 +498,9 @@ export async function generateQuestionsWithAI(input: GenerateQuestionsWithAIInpu
             questions,
         };
     } catch (error) {
-        const message =
-            error instanceof Error
-                ? error.message
-                : "AI 문제 생성 중 오류가 발생했습니다.";
+        const message = error instanceof Error
+            ? error.message
+            : "An error occurred during AI question generation.";
 
         return {
             success: false as const,
