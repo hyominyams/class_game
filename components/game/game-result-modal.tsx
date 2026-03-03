@@ -100,7 +100,11 @@ export function GameResultModal({
                                 <motion.div
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1, rotate: isClear ? [0, -10, 10, -10, 0] : 0 }}
-                                    transition={{ delay: 0.2, type: "spring" }}
+                                    transition={{
+                                        delay: 0.2,
+                                        scale: { type: "spring", stiffness: 300, damping: 25 },
+                                        rotate: { type: "tween", duration: 0.45, ease: "easeInOut" }
+                                    }}
                                     className="flex justify-center mb-4 relative"
                                 >
                                     {isClear && (

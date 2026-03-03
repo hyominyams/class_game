@@ -34,7 +34,7 @@ const GAMES: Game[] = [
     },
     {
         id: "word-chain",
-        title: "word chain",
+        title: "단어 연결",
         category: "ENGLISH",
         description: "제시어를 보고 정답을 이어서 입력해 점수를 올리세요.",
         color: "bg-indigo-100",
@@ -50,7 +50,7 @@ const GAMES: Game[] = [
     },
     {
         id: "pixel-runner",
-        title: "픽셀 러너",
+        title: "픽셀러너",
         category: "GENERAL",
         description: "장애물을 피하고 문제를 풀며 달리세요.",
         color: "bg-green-100",
@@ -103,11 +103,10 @@ export function GameListClient({ activeTournaments, participationMap }: GameList
                     <button
                         key={category}
                         onClick={() => setFilter(category)}
-                        className={`relative whitespace-nowrap rounded border-4 border-black px-4 py-2 font-pixel text-sm shadow-[2px_2px_0_0_black] transition-all ${
-                            filter === category
+                        className={`relative whitespace-nowrap rounded border-4 border-black px-4 py-2 font-pixel text-sm shadow-[2px_2px_0_0_black] transition-all ${filter === category
                                 ? "z-10 -translate-y-1 bg-[#ff2e63] text-white shadow-[4px_4px_0_0_black]"
                                 : "bg-white hover:z-10 hover:-translate-y-0.5 hover:bg-gray-100 hover:shadow-[3px_3px_0_0_black]"
-                        }`}
+                            }`}
                     >
                         {category === "ALL" ? "전체" : category}
                     </button>

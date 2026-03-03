@@ -7,8 +7,6 @@ import { isRankingEligibleReason } from "@/app/constants/economy";
 import { StudentPixelCard } from "@/components/ui/student_pixel-card";
 import { QuickActionsCarousel } from "@/components/ui/quick-actions-carousel";
 import { ClassSettingsModal } from "@/components/teacher/class-settings-modal";
-import { TeacherDashboardNavbar } from "@/components/teacher/teacher-dashboard-navbar";
-
 export const dynamic = "force-dynamic";
 
 const quickActions = [
@@ -65,10 +63,10 @@ type TeacherDashboardData = {
 };
 
 const GAME_LABELS: Record<string, string> = {
-    "pixel-runner": "픽셀 러너",
-    "history-quiz": "역사 퀴즈",
-    "word-runner": "word defense",
-    "word-chain": "word chain",
+    "pixel-runner": "픽셀러너",
+    "history-quiz": "역사 퀴즈 어택",
+    "word-runner": "단어 디펜스",
+    "word-chain": "단어 연결",
     "ox-swipe": "OX 스와이프",
     "typing-defense": "타이핑 디펜스",
     "memory-match": "메모리 매치",
@@ -426,8 +424,6 @@ export default async function TeacherDashboardPage() {
 
     return (
         <div className="space-y-6 max-w-6xl mx-auto">
-            <TeacherDashboardNavbar />
-
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1.15fr)] gap-6 items-start mt-6">
                 <div className="space-y-6">
                     <div className="grid gap-4 md:grid-cols-3 items-stretch">

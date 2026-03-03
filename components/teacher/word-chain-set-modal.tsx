@@ -57,7 +57,7 @@ function normalizeAcceptedAnswers(value: unknown): string[] {
 export function WordChainSetModal({
     children,
     gameId = "word-chain",
-    gameTitle = "word chain",
+    gameTitle = "단어 연결",
     teacherProfile,
     setId,
     initialTitle = "",
@@ -280,7 +280,7 @@ export function WordChainSetModal({
                             <Input
                                 value={title}
                                 onChange={(event) => setTitle(event.target.value)}
-                                placeholder="예: word chain 초급 세트"
+                                placeholder="예: 단어 연결 초급 세트"
                                 required
                             />
                         </div>

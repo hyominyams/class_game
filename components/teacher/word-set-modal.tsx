@@ -56,7 +56,7 @@ function getQuestionModeDescription(mode: WordQuestionMode) {
 export function WordSetModal({
     children,
     gameId = "word-runner",
-    gameTitle = "word defense",
+    gameTitle = "단어 디펜스",
     teacherProfile,
     setId,
     initialTitle = "",
@@ -141,6 +141,9 @@ export function WordSetModal({
                     korean: row.question_text || "",
                 }));
                 setWords(parsed);
+            } catch (error) {
+                console.error("Failed to load word-defense questions:", error);
+                alert("문제 세트를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
             } finally {
                 setLoading(false);
             }
@@ -187,48 +190,52 @@ export function WordSetModal({
         const parsedClass = normalizeNumericInput(classNum);
 
         if (!title.trim()) {
-            alert("세트 제목을 입력해주세요.");
+            alert("세트 제목을 입력해 주세요.");
             return;
         }
 
         if (Number.isNaN(parsedGrade) || Number.isNaN(parsedClass)) {
-            alert("학년/반을 올바르게 입력해주세요.");
+            alert("학년/반을 올바르게 입력해 주세요.");
             return;
         }
 
         if (words.some((word) => !word.english.trim() || !word.korean.trim())) {
-            alert("모든 문항의 영어/뜻을 입력해주세요.");
+            alert("모든 문항의 영어/뜻을 입력해 주세요.");
             return;
         }
 
         setLoading(true);
+        try {
+            const questionsData = words.map((word) => ({
+                question_text: word.korean.trim(),
+                answer_text: word.english.trim(),
+                options: [word.english.trim()],
+                type: "word-pair",
+                correct_answer: 0,
+            }));
 
-        const questionsData = words.map((word) => ({
-            question_text: word.korean.trim(),
-            answer_text: word.english.trim(),
-            options: [word.english.trim()],
-            type: "word-pair",
-            correct_answer: 0,
-        }));
+            const result = setId
+                ? await updateQuestionSet(setId, title.trim(), parsedGrade, parsedClass, questionsData, { questionMode })
+                : await createQuestionSet(gameId, title.trim(), parsedGrade, parsedClass, questionsData, { questionMode });
 
-        const result = setId
-            ? await updateQuestionSet(setId, title.trim(), parsedGrade, parsedClass, questionsData, { questionMode })
-            : await createQuestionSet(gameId, title.trim(), parsedGrade, parsedClass, questionsData, { questionMode });
+            if (!result.success) {
+                alert(result.error || "문제세트 저장에 실패했습니다.");
+                return;
+            }
 
-        setLoading(false);
-
-        if (!result.success) {
-            alert(result.error || "문제세트 저장에 실패했습니다.");
-            return;
+            setOpen(false);
+            if (!setId) {
+                setTitle("");
+                setQuestionMode("en_to_ko");
+                setWords([{ english: "", korean: "" }]);
+            }
+            router.refresh();
+        } catch (error) {
+            console.error("Failed to save word-defense set:", error);
+            alert("문제 세트 저장 중 오류가 발생했습니다.");
+        } finally {
+            setLoading(false);
         }
-
-        setOpen(false);
-        if (!setId) {
-            setTitle("");
-            setQuestionMode("en_to_ko");
-            setWords([{ english: "", korean: "" }]);
-        }
-        router.refresh();
     };
 
     const gradeReadOnly = typeof teacherProfile?.grade === "number";
@@ -276,7 +283,7 @@ export function WordSetModal({
                             <Input
                                 value={title}
                                 onChange={(event) => setTitle(event.target.value)}
-                                placeholder="예: word defense 기초 20"
+                                placeholder="예: 단어 디펜스 기초 20"
                                 required
                             />
                         </div>

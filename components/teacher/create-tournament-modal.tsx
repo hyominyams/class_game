@@ -35,10 +35,10 @@ type QuestionSet = {
 };
 
 const GAME_LABELS: Record<string, string> = {
-    "pixel-runner": "픽셀 러너",
-    "word-runner": "word defense",
-    "history-quiz": "역사 퀴즈",
-    "word-chain": "워드 체인",
+    "pixel-runner": "픽셀러너",
+    "word-runner": "단어 디펜스",
+    "history-quiz": "역사 퀴즈 어택",
+    "word-chain": "단어 연결",
 };
 
 const DEFAULT_GAME_ORDER = ["pixel-runner", "word-runner", "history-quiz"];

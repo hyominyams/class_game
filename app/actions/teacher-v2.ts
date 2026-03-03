@@ -5,6 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireActor } from "@/app/actions/security/guards";
 import { canAccessClassScope, canManageStudent } from "@/app/actions/security/rbac";
 
+type LooseRpcError = { code?: string; message?: string } | null;
+
 function normalizeManualCoinReason(reason: string, role: 'teacher' | 'admin', amount: number) {
     const trimmedReason = reason.trim() || 'manual-adjustment';
     if (
@@ -21,6 +23,11 @@ function normalizeManualCoinReason(reason: string, role: 'teacher' | 'admin', am
     }
 
     return role === 'teacher' ? `TEACHER_REVOKE:${trimmedReason}` : `ADMIN_REVOKE:${trimmedReason}`;
+}
+
+function isActivateRpcMissingError(error: LooseRpcError) {
+    if (!error) return false;
+    return error.code === "PGRST202" || (error.message || "").includes("activate_question_set_atomic");
 }
 
 /**
@@ -95,6 +102,30 @@ export async function toggleQuestionSetAction(setId: string, gameId: string, act
     }
 
     if (active) {
+        const rpcClient = supabase as unknown as {
+            rpc: (
+                fn: string,
+                params?: Record<string, unknown>
+            ) => Promise<{ data: unknown; error: LooseRpcError }>
+        };
+
+        const { error: rpcError } = await rpcClient.rpc("activate_question_set_atomic", {
+            p_set_id: setId,
+            p_actor_id: actor.userId,
+        });
+
+        if (!rpcError) {
+            revalidatePath("/teacher/questions");
+            revalidatePath("/admin/questions");
+            revalidatePath("/student/game");
+            return { success: true };
+        }
+
+        if (!isActivateRpcMissingError(rpcError)) {
+            return { success: false, error: rpcError.message || "Failed to activate question set atomically." };
+        }
+
+        // Fallback: keep legacy path for environments where RPC is not deployed yet.
         let deactivateQuery = updateClient
             .from("question_sets")
             .update({ is_active: false })

@@ -140,11 +140,20 @@ const ENEMY_SPRITE_PATHS: Record<AnimatedEnemyAssetKey, { image: string; meta: s
 };
 
 const ENEMY_CONFIG: Record<EnemyKind, { speed: number; hp: number; size: number; value: number; asset: AssetKey }> = {
-    zombie: { speed: 36, hp: 1, size: 62, value: 120, asset: "enemyZombie" },
-    bat: { speed: 48, hp: 1, size: 54, value: 140, asset: "enemyBat" },
-    tank: { speed: 27, hp: 3, size: 72, value: 230, asset: "enemyTank" },
-    boss: { speed: 21, hp: 8, size: 126, value: 1200, asset: "boss" },
+    zombie: { speed: 36, hp: 1, size: 62, value: 18, asset: "enemyZombie" },
+    bat: { speed: 48, hp: 1, size: 54, value: 24, asset: "enemyBat" },
+    tank: { speed: 27, hp: 3, size: 72, value: 48, asset: "enemyTank" },
+    boss: { speed: 21, hp: 8, size: 126, value: 140, asset: "boss" },
 };
+
+const WORD_DEFENSE_SCORE_RULE = {
+    hitBase: 8,
+    hitComboPerStep: 1,
+    hitComboCap: 8,
+    killComboPerStep: 2,
+    killComboCap: 16,
+    maxRunScore: 2000,
+} as const;
 
 const SFX_CONFIG: Record<SfxKind, { from: number; to: number; duration: number; gain: number; type: OscillatorType }> = {
     correct: { from: 560, to: 760, duration: 0.08, gain: 0.06, type: "triangle" },
@@ -553,6 +562,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             const isClear = isClearOverride ?? finalLives > 0;
             const playTime = Math.floor((performance.now() - startTimeRef.current) / 1000);
             const isParticipationRun = finalCorrect > 0 || finalKills > 0 || playTime >= 40;
+            try {
 
             const saveResult = await saveGameResult("word-runner", finalScore, playTime, {
                 correctCount: finalCorrect,
@@ -578,6 +588,17 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             const tournamentId = searchParams.get("tournamentId");
             if (mode === "tournament" && tournamentId) {
                 await recordTournamentAttempt(tournamentId, finalScore);
+            }
+            } catch (error) {
+                console.error("Word defense endGame failed:", error);
+                setResult({
+                    isOpen: true,
+                    isClear,
+                    score: finalScore,
+                    coinsEarned: 0,
+                    dailyCoinsTotal: 0,
+                    dailyLimit: DAILY_GAME_COIN_LIMIT,
+                });
             }
         },
         [playSfx, searchParams],
@@ -659,7 +680,9 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
         shieldChargeRef.current = nextCharge;
         setShieldCharge(nextCharge);
 
-        let gained = 40 + Math.min((nextCombo - 1) * 6, 60);
+        let gained =
+            WORD_DEFENSE_SCORE_RULE.hitBase +
+            Math.min((nextCombo - 1) * WORD_DEFENSE_SCORE_RULE.hitComboPerStep, WORD_DEFENSE_SCORE_RULE.hitComboCap);
 
         if (enemy.hp <= 0) {
             runtime.enemies.splice(targetIndex, 1);
@@ -671,17 +694,24 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             killCountRef.current = nextKills;
             setKillCount(nextKills);
 
-            gained += enemy.value + Math.min(nextCombo * 12, 180);
+            gained +=
+                enemy.value +
+                Math.min(nextCombo * WORD_DEFENSE_SCORE_RULE.killComboPerStep, WORD_DEFENSE_SCORE_RULE.killComboCap);
         } else {
             playSfx("hit");
         }
 
-        const nextScore = scoreRef.current + gained;
+        const nextScore = Math.min(WORD_DEFENSE_SCORE_RULE.maxRunScore, scoreRef.current + gained);
+        const appliedGain = nextScore - scoreRef.current;
         scoreRef.current = nextScore;
         setScore(nextScore);
 
         const statusAction = enemy.hp <= 0 ? "DEFEATED" : "HIT";
-        setStatusMessage(`${enemy.pair.promptEn} ${statusAction} +${gained}`);
+        setStatusMessage(
+            nextScore >= WORD_DEFENSE_SCORE_RULE.maxRunScore
+                ? `${enemy.pair.promptEn} ${statusAction} +${appliedGain} (MAX SCORE)`
+                : `${enemy.pair.promptEn} ${statusAction} +${appliedGain}`
+        );
 
         if (nextCharge >= SHIELD_MAX_CHARGE) {
             setStatusMessage("Shield ready! Press [Shift] or the button.");
@@ -693,7 +723,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
         setTypedInput("");
     }, [addEffect, gameState, playSfx]);
 
-    const startGame = useCallback(async (payload: StartPayload) => {
+    const startGame = useCallback((payload: StartPayload) => {
         setGameState("loading");
         const ctx = getAudioContext();
         if (ctx && ctx.state === "suspended") {
@@ -802,6 +832,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
         const bootstrap = async () => {
             setTournamentInitError(null);
             setIsTournamentInitializing(true);
+            try {
 
             const selection = await getTournamentQuestionSetSelection(tournamentId, "word-runner");
             if (!selection.success || !selection.questionSetId) {
@@ -815,15 +846,22 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             if (cancelled) return;
 
             const tournamentQuestions = (await getQuestions(selection.questionSetId)) as unknown as RawQuestion[];
-            await startGame({
+            startGame({
                 setId: selection.questionSetId,
                 title: selection.tournamentTitle ? selection.tournamentTitle + " tournament set" : "tournament set",
                 questionMode: normalizeQuestionMode(selection.questionMode),
                 questions: tournamentQuestions,
             });
 
-            if (!cancelled) {
-                setIsTournamentInitializing(false);
+            } catch (error) {
+                console.error("Failed to bootstrap word-defense tournament:", error);
+                if (!cancelled) {
+                    setTournamentInitError("토너먼트 문제를 불러오는 중 오류가 발생했습니다.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsTournamentInitializing(false);
+                }
             }
         };
 
@@ -1285,7 +1323,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
                                     <button
                                         className="shrink-0 flex items-center justify-center relative z-10 h-14 w-full md:w-auto px-8 rounded-lg border-[3px] border-black bg-[#ff2e63] font-pixel text-[18px] text-white tracking-widest shadow-[4px_4px_0_0_#000] transition-transform hover:scale-105 active:scale-95 active:translate-y-1 active:shadow-[2px_2px_0_0_#000]"
                                         onClick={() => {
-                                            void startGame({
+                                            startGame({
                                                 setId: runtimeData.setId!,
                                                 title: runtimeData.sourceScope === "CLASS" ? "Class Active Set" : "Global Active Set",
                                                 questionMode: runtimeData.questionMode,
@@ -1333,7 +1371,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
                 onRetry={() => {
                     setResult((prev) => ({ ...prev, isOpen: false }));
                     if (retryPayload) {
-                        void startGame(retryPayload);
+                        startGame(retryPayload);
                     }
                 }}
                 onExit={() => {

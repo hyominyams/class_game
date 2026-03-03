@@ -50,6 +50,12 @@ interface RawQuestion {
 
 const START_TIME = 150;
 const START_HEARTS = 3;
+const HISTORY_SCORE_RULE = {
+    baseCorrect: 80,
+    bossBonus: 40,
+    streakBonusPerStep: 5,
+    streakBonusCap: 50,
+} as const;
 const HISTORY_MAP_BG = "/images/history-quiz/bg-korean.png";
 const HISTORY_RELIC = "/relic.png";
 const HISTORY_BOSS_BADGE = "/bosss-badge.png";
@@ -317,10 +323,11 @@ export function HistoryQuizGame({ runtimeData }: { runtimeData: RuntimeQuestions
 
     const resolveAnswer = (isCorrect: boolean) => {
         let nextHearts = hearts;
-        const bossBonus = isBossRound ? 80 : 0;
+        const bossBonus = isBossRound ? HISTORY_SCORE_RULE.bossBonus : 0;
 
         if (isCorrect) {
-            const earned = 100 + bossBonus + streak * 10;
+            const streakBonus = Math.min(streak * HISTORY_SCORE_RULE.streakBonusPerStep, HISTORY_SCORE_RULE.streakBonusCap);
+            const earned = HISTORY_SCORE_RULE.baseCorrect + bossBonus + streakBonus;
             setScore((prev) => prev + earned);
             setCorrectCount((prev) => prev + 1);
             setRelicCount((prev) => prev + 1);

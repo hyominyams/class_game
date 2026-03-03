@@ -397,9 +397,46 @@ export type Database = {
             [_ in never]: never
         }
         Functions: {
+            activate_question_set_atomic: {
+                Args: { p_actor_id?: string; p_set_id: string }
+                Returns: {
+                    activated_set_id: string
+                    applied_scope: string
+                    game_id: string
+                }[]
+            }
             increment_coin_balance: {
                 Args: { amount_arg: number; user_id_arg: string }
                 Returns: undefined
+            }
+            purchase_item_atomic: {
+                Args: {
+                    p_item_id: string
+                    p_item_name?: string | null
+                    p_price?: number | null
+                    p_user_id: string
+                }
+                Returns: {
+                    error: string | null
+                    item_id: string
+                    new_balance: number | null
+                    quantity: number
+                    success: boolean
+                }[]
+            }
+            record_tournament_attempt_atomic: {
+                Args: {
+                    p_play_time?: number | null
+                    p_score: number
+                    p_tournament_id: string
+                }
+                Returns: {
+                    attempts_left: number | null
+                    attempts_used: number | null
+                    best_score: number | null
+                    error: string | null
+                    success: boolean
+                }[]
             }
         }
         Enums: {

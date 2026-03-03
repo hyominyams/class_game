@@ -1,4 +1,9 @@
-Need to install the following packages:
-supabase@2.76.7
-Ok to proceed? (y) 
-
+-- ClassQuest public schema snapshot
+-- Regenerate with:
+--   npm run db:dump:public
+--
+-- Note:
+--   In this workspace, dump regeneration is blocked until Supabase is linked:
+--   npx supabase link --project-ref <project_ref>
+--
+-- Last updated: 2026-02-28

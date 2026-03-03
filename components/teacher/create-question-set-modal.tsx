@@ -116,10 +116,10 @@ export function CreateQuestionSetModal({ children }: { children: React.ReactNode
                                         <SelectValue placeholder="게임을 선택하세요" />
                                     </SelectTrigger>
                                     <SelectContent className="border-2 border-black font-bold">
-                                        <SelectItem value="pixel-runner">픽셀 러너</SelectItem>
-                                        <SelectItem value="word-runner">word defense</SelectItem>
-                                        <SelectItem value="word-chain">워드 체인</SelectItem>
-                                        <SelectItem value="history-quiz">역사 퀴즈 탐험</SelectItem>
+                                        <SelectItem value="pixel-runner">픽셀러너</SelectItem>
+                                        <SelectItem value="word-runner">단어 디펜스</SelectItem>
+                                        <SelectItem value="word-chain">단어 연결</SelectItem>
+                                        <SelectItem value="history-quiz">역사 퀴즈 어택</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

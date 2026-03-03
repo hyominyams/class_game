@@ -2,10 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { requireActor } from "@/app/actions/security/guards";
 
 const MAX_TOURNAMENT_ATTEMPTS = 3;
 const MAX_TOURNAMENT_WRITE_RETRIES = 5;
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+type LooseRpcError = { code?: string; message?: string } | null;
 
 type TournamentTarget = "CLASS" | "GRADE";
 
@@ -54,6 +56,33 @@ type AttemptWriteResult = {
     previousLastPlayedAt?: string | null;
     error?: string;
 };
+
+function isTournamentAttemptRpcMissingError(error: LooseRpcError) {
+    if (!error) return false;
+    return error.code === "PGRST202" || (error.message || "").includes("record_tournament_attempt_atomic");
+}
+
+function normalizeTournamentAttemptRpcResult(payload: unknown) {
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    if (!row || typeof row !== "object") return null;
+
+    const parsed = row as Record<string, unknown>;
+    const success = parsed.success === true;
+    const attemptsUsed = Number(parsed.attempts_used ?? parsed.attemptsUsed ?? 0);
+    const attemptsLeft = Number(parsed.attempts_left ?? parsed.attemptsLeft ?? 0);
+    const bestScore = Number(parsed.best_score ?? parsed.bestScore ?? 0);
+    const error = typeof parsed.error === "string" ? parsed.error : undefined;
+
+    if (!success && !error) return null;
+
+    return {
+        success,
+        attemptsUsed: Number.isFinite(attemptsUsed) ? attemptsUsed : 0,
+        attemptsLeft: Number.isFinite(attemptsLeft) ? attemptsLeft : 0,
+        bestScore: Number.isFinite(bestScore) ? bestScore : 0,
+        error,
+    };
+}
 
 function normalizeTournamentSelections(data: {
     gameSetSelections?: TournamentGameSelection[];
@@ -313,20 +342,16 @@ export async function createTournamentAction(data: {
     grade?: number;
     classNum?: number;
 }) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) return { success: false, error: "Not logged in" };
-
-    const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, grade, class")
-        .eq("id", user.id)
-        .single();
-
-    if (!profile) {
-        return { success: false, error: "Profile not found" };
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
     }
+    const { actor, supabase } = actorResult;
+    const profile = {
+        role: actor.role,
+        grade: actor.grade,
+        class: actor.classNum,
+    };
 
     const { scope, error: scopeError } = resolveTournamentScope(profile as UserProfile, data);
     if (!scope) {
@@ -403,7 +428,7 @@ export async function createTournamentAction(data: {
         .in("id", questionSetIds);
 
     if (profile.role === "teacher") {
-        ownedSetQuery = ownedSetQuery.eq("created_by", user.id);
+        ownedSetQuery = ownedSetQuery.eq("created_by", actor.userId);
     }
 
     const { data: ownedSets, error: setFetchError } = await ownedSetQuery;
@@ -441,7 +466,7 @@ export async function createTournamentAction(data: {
             class: scope.target === "CLASS" ? scope.classNum : null,
             start_time: data.startTime,
             end_time: data.endTime,
-            created_by: user.id,
+            created_by: actor.userId,
             is_active: true,
         };
     }).filter((row): row is {
@@ -656,16 +681,57 @@ export async function checkTournamentEligibility(tournamentId: string, userId?: 
 }
 
 export async function recordTournamentAttempt(tournamentId: string, score: number) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const actorResult = await requireActor(["student"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
+    const { actor, supabase } = actorResult;
 
-    if (!user) return { success: false, error: "Authentication required" };
+    const normalizedScore = normalizeScore(score);
+    const rpcClient = supabase as unknown as {
+        rpc: (
+            fn: string,
+            params?: Record<string, unknown>
+        ) => Promise<{ data: unknown; error: LooseRpcError }>
+    };
+
+    const { data: rpcData, error: rpcError } = await rpcClient.rpc("record_tournament_attempt_atomic", {
+        p_tournament_id: tournamentId,
+        p_score: normalizedScore,
+    });
+
+    if (!rpcError) {
+        const normalized = normalizeTournamentAttemptRpcResult(rpcData);
+        if (normalized) {
+            if (!normalized.success) {
+                return {
+                    success: false,
+                    error: normalized.error || "Failed to record attempt",
+                    attemptsLeft: normalized.attemptsLeft,
+                };
+            }
+
+            return {
+                success: true,
+                attemptsUsed: normalized.attemptsUsed,
+                attemptsLeft: normalized.attemptsLeft,
+                bestScore: normalized.bestScore,
+            };
+        }
+    }
+
+    if (rpcError && !isTournamentAttemptRpcMissingError(rpcError)) {
+        return {
+            success: false,
+            error: rpcError.message || "Failed to record attempt",
+        };
+    }
 
     const [{ data: profile, error: profileError }, { data: tournament, error: tournamentError }] = await Promise.all([
         supabase
             .from("profiles")
             .select("role, grade, class")
-            .eq("id", user.id)
+            .eq("id", actor.userId)
             .single(),
         supabase
             .from("tournaments")
@@ -694,12 +760,10 @@ export async function recordTournamentAttempt(tournamentId: string, score: numbe
         return { success: false, error: "Tournament is not active" };
     }
 
-    const normalizedScore = normalizeScore(score);
-
     const attemptWrite = await updateParticipantAttemptWithRetry(
         supabase,
         tournamentId,
-        user.id,
+        actor.userId,
         normalizedScore,
     );
 
@@ -715,7 +779,7 @@ export async function recordTournamentAttempt(tournamentId: string, score: numbe
         .from("tournament_logs")
         .insert({
             tournament_id: tournamentId,
-            user_id: user.id,
+            user_id: actor.userId,
             score: normalizedScore,
         });
 
@@ -723,7 +787,7 @@ export async function recordTournamentAttempt(tournamentId: string, score: numbe
         await rollbackParticipantAttempt(
             supabase,
             tournamentId,
-            user.id,
+            actor.userId,
             attemptWrite.previousAttemptsUsed || 0,
             attemptWrite.previousBestScore || 0,
             attemptWrite.previousLastPlayedAt,

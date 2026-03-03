@@ -30,10 +30,10 @@ type QuestionSetCardItem = {
 };
 
 const FALLBACK_GAMES: GameItem[] = [
-    { id: "word-runner", title: "word defense" },
-    { id: "word-chain", title: "word chain" },
-    { id: "history-quiz", title: "역사 퀴즈" },
-    { id: "pixel-runner", title: "픽셀 러너" },
+    { id: "word-runner", title: "단어 디펜스" },
+    { id: "word-chain", title: "단어 연결" },
+    { id: "history-quiz", title: "역사 퀴즈 어택" },
+    { id: "pixel-runner", title: "픽셀러너" },
 ];
 
 export default async function AdminQuestionsPage({
@@ -54,7 +54,7 @@ export default async function AdminQuestionsPage({
     let games = (gameRows as GameItem[] | null) || [];
     if (games.length === 0) games = [...FALLBACK_GAMES];
     if (!games.some((game) => game.id === "word-chain")) {
-        games = [...games, { id: "word-chain", title: "word chain" }];
+        games = [...games, { id: "word-chain", title: "단어 연결" }];
     }
 
     let query = adminClient

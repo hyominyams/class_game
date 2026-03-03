@@ -1,0 +1,4 @@
+interface:
+  display_name: "ClassQuest New Game Playbook"
+  short_description: "Plan and execute full ClassQuest new-game integrations."
+  default_prompt: "Use $classquest-new-game-playbook to add a new ClassQuest game end-to-end."

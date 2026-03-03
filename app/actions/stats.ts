@@ -53,36 +53,73 @@ export async function getStudentStatsData() {
 
     // Condition Checks
     if (totalPlays >= 1 && !ownedBadgeIds.has('first_step')) newBadges.push('first_step');
-    if (logs?.some(l => (l.score || 0) >= 1000) && !ownedBadgeIds.has('math_genius')) newBadges.push('math_genius');
 
-    // "speed_racer"
-    if (logs?.some(l => (l.play_time || 999) <= 30 && (l.score || 0) > 0) && !ownedBadgeIds.has('speed_racer')) newBadges.push('speed_racer');
+    if (!ownedBadgeIds.has('math_genius') && logs?.some(l => l.game_id === 'math-game' && (l.score || 0) >= 1000)) newBadges.push('math_genius');
+
+    if (!ownedBadgeIds.has('perfect_aim') && logs?.some(l => (l.metadata as any)?.correctRate === 100 || (l.metadata as any)?.perfect === true)) newBadges.push('perfect_aim');
+
+    // "speed_racer" - 30초 내 클리어
+    if (!ownedBadgeIds.has('speed_racer') && logs?.some(l => (l.play_time || 999) <= 30 && (l.score || 0) > 0 && (l.metadata as any)?.status === 'CLEARED')) newBadges.push('speed_racer');
+
+    // "quiz_explorer" - 모든 종류의 게임 1회 이상 플레이
+    if (!ownedBadgeIds.has('quiz_explorer')) {
+        const uniqueGames = new Set(logs?.map(l => l.game_id));
+        if (uniqueGames.size >= 3) newBadges.push('quiz_explorer'); // 대략 3개 이상이면 탐험가로 간주
+    }
+
+    // "word_collector" - 영어 단어 게임 5회
+    const wordDefensePlayCount =
+        logs?.filter(l => l.game_id === 'word-runner' || l.game_id === 'word-defense').length || 0;
+    if (!ownedBadgeIds.has('word_collector') && wordDefensePlayCount >= 5) newBadges.push('word_collector');
 
     // "rich_kid"
-    if ((profile.coin_balance || 0) >= 1000 && !ownedBadgeIds.has('rich_kid')) newBadges.push('rich_kid');
+    if (!ownedBadgeIds.has('rich_kid') && (profile?.coin_balance || 0) >= 1000) newBadges.push('rich_kid');
+
+    // "ranking_master"
+    if (!ownedBadgeIds.has('ranking_master') && logs?.some(l => (l.metadata as any)?.rank === 1 || (l.metadata as any)?.is_first_place === true)) newBadges.push('ranking_master');
 
     // "effort_king"
     if (!ownedBadgeIds.has('effort_king')) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-
         const todayLogs = logs?.filter(l => new Date(l.created_at || '').getTime() >= today.getTime()) || [];
-
-        // Count games played today with 0 coins earned (excluding attendance)
         const { data: todayTransactions } = await adminClient
             .from('coin_transactions')
             .select('reference_id, amount')
             .eq('user_id', actor.userId)
             .ilike('reason', 'GAME_REWARD:%')
             .gte('created_at', today.toISOString());
-
         const rewardedLogIds = new Set(todayTransactions?.filter(tx => tx.amount > 0).map(tx => tx.reference_id) || []);
         const zeroRewardGamesCount = todayLogs.filter(log => !rewardedLogIds.has(log.id)).length;
-
-        if (zeroRewardGamesCount >= 5) {
-            newBadges.push('effort_king');
-        }
+        if (zeroRewardGamesCount >= 5) newBadges.push('effort_king');
     }
+
+    // New Badges
+    if (!ownedBadgeIds.has('combo_master') && logs?.some(l => ((l.metadata as any)?.maxCombo || 0) >= 10)) newBadges.push('combo_master');
+
+    if (!ownedBadgeIds.has('night_owl') && logs?.some(l => {
+        const h = new Date(l.created_at || '').getHours();
+        return h >= 22 || h < 4;
+    })) newBadges.push('night_owl');
+
+    if (!ownedBadgeIds.has('early_bird') && logs?.some(l => {
+        const h = new Date(l.created_at || '').getHours();
+        return h >= 4 && h < 8;
+    })) newBadges.push('early_bird');
+
+    if (!ownedBadgeIds.has('tournament_champion') && logs?.some(l => (l.metadata as any)?.mode === 'TOURNAMENT' && (l.metadata as any)?.rank === 1)) newBadges.push('tournament_champion');
+
+    if (!ownedBadgeIds.has('history_buff') && (logs?.filter(l => l.game_id === 'history-quiz').reduce((sum, l) => sum + (l.score || 0), 0) || 0) >= 10000) newBadges.push('history_buff');
+
+    if (!ownedBadgeIds.has('marathoner') && (logs?.filter(l => l.game_id === 'pixel-runner').length || 0) >= 50) newBadges.push('marathoner');
+
+    if (!ownedBadgeIds.has('word_hero') && logs?.some(l => l.game_id === 'word-chain' && (l.play_time || 999) < 40 && (l.score || 0) > 0)) newBadges.push('word_hero');
+
+    if (!ownedBadgeIds.has('never_give_up') && logs?.some(l => ((l.metadata as any)?.attempt_num || 0) >= 5 && (l.metadata as any)?.status === 'CLEARED')) newBadges.push('never_give_up');
+
+    if (!ownedBadgeIds.has('lucky_seven') && logs?.some(l => (l.score || 0) === 777)) newBadges.push('lucky_seven');
+
+    if (!ownedBadgeIds.has('team_player') && (logs?.filter(l => (l.metadata as any)?.mode === 'TOURNAMENT' || (l.metadata as any)?.is_class_battle === true).length || 0) >= 10) newBadges.push('team_player');
 
     // Grant new badges (Use Admin Client)
     if (newBadges.length > 0) {

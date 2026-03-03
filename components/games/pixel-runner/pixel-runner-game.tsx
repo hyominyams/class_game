@@ -208,6 +208,11 @@ export default function PixelRunnerGame() {
         const GROUND_Y = 415;
         const GRAVITY = 0.6;
         const MAX_QUIZ_COUNT = 10;
+        const PIXEL_SCORE_RULE = {
+            quizCorrect: 70,
+            coinPickup: 8,
+            survivalPerFrame: 0.03,
+        } as const;
 
         let gameSpeed = 4; // Adjusted for difficulty (was 5)
         let score = 0;
@@ -791,8 +796,8 @@ export default function PixelRunnerGame() {
             if (progress) progress.innerText = `QUIZ: ${quizCount}/${MAX_QUIZ_COUNT}`;
 
             if (isCorrect) {
-                score += 100;
-                showFeedback("CORRECT! +100", "#4CAF50");
+                score += PIXEL_SCORE_RULE.quizCorrect;
+                showFeedback(`CORRECT! +${PIXEL_SCORE_RULE.quizCorrect}`, "#4CAF50");
                 player.invincible = true;
                 player.invincibleTimer = 1000;
             } else {
@@ -1031,7 +1036,7 @@ export default function PixelRunnerGame() {
                 coin.update();
                 coin.draw(ctx);
                 if (checkCollision(player.getHitbox(), coin.getHitbox())) {
-                    score += 10;
+                    score += PIXEL_SCORE_RULE.coinPickup;
                     coin.markedForDeletion = true;
                     playSound('coin');
                     createParticles(coin.x + 15, coin.y + 15, 5, '#FFFFFF');
@@ -1043,7 +1048,7 @@ export default function PixelRunnerGame() {
             player.draw(ctx);
 
             if (!isGameOver) {
-                score += 0.05;
+                score += PIXEL_SCORE_RULE.survivalPerFrame;
                 gameSpeed += 0.001;
                 updateUI();
                 requestAnimationFrame(gameLoop);

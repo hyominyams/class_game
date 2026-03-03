@@ -1,9 +1,9 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { getStoreItemById } from '@/app/constants/store-items'
+import { requireActor } from '@/app/actions/security/guards'
 
 const MAX_PURCHASE_RETRIES = 4
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -214,12 +214,11 @@ async function purchaseWithFallback(userId: string, itemId: string, itemName: st
 }
 
 export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> {
-    const supabase = await createClient()
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-        return { success: false, itemId, error: 'Unauthorized' }
+    const actorResult = await requireActor(["student"]);
+    if (!actorResult.ok) {
+        return { success: false, itemId, error: actorResult.error }
     }
+    const { actor, supabase } = actorResult;
 
     const item = getStoreItemById(itemId)
     if (!item) {
@@ -234,7 +233,7 @@ export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> 
         ) => Promise<{ data: unknown; error: LooseRpcError }>
     }
     const { data: rpcData, error: rpcError } = await rpcClient.rpc('purchase_item_atomic', {
-        p_user_id: user.id,
+        p_user_id: actor.userId,
         p_item_id: itemId,
         p_item_name: item.name,
         p_price: item.price,
@@ -254,12 +253,12 @@ export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> 
             supabase
                 .from('profiles')
                 .select('coin_balance')
-                .eq('id', user.id)
-                .single(),
+            .eq('id', actor.userId)
+            .single(),
             supabase
                 .from('student_items')
                 .select('quantity')
-                .eq('user_id', user.id)
+                .eq('user_id', actor.userId)
                 .eq('item_id', itemId)
                 .maybeSingle(),
         ])
@@ -282,7 +281,7 @@ export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> 
         return { success: false, itemId, error: rpcError.message || 'Atomic purchase RPC failed.' }
     }
 
-    const fallbackResult = await purchaseWithFallback(user.id, itemId, item.name, item.price)
+    const fallbackResult = await purchaseWithFallback(actor.userId, itemId, item.name, item.price)
 
     if (fallbackResult.success) {
         revalidatePath('/student/store')
@@ -293,14 +292,14 @@ export async function purchaseItem(itemId: string): Promise<PurchaseItemResult> 
 }
 
 export async function getUserCoins() {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return 0
+    const actorResult = await requireActor(["student"]);
+    if (!actorResult.ok) return 0;
+    const { actor, supabase } = actorResult;
 
     const { data } = await supabase
         .from('profiles')
         .select('coin_balance')
-        .eq('id', user.id)
+        .eq('id', actor.userId)
         .single()
 
     return data?.coin_balance || 0

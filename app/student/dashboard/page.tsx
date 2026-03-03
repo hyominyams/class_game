@@ -32,9 +32,10 @@ type DashboardData = {
 };
 
 const GAME_LABELS: Record<string, string> = {
-    "pixel-runner": "픽셀 러너",
-    "history-quiz": "역사 퀴즈",
-    "word-runner": "워드 디펜스",
+    "pixel-runner": "픽셀러너",
+    "history-quiz": "역사 퀴즈 어택",
+    "word-runner": "단어 디펜스",
+    "word-chain": "단어 연결",
     attendance: "출석 체크",
 };
 

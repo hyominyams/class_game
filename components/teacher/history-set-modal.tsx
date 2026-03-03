@@ -63,7 +63,7 @@ function normalizeOptions(options: unknown): [string, string, string, string] {
 export function HistorySetModal({
     children,
     gameId = "history-quiz",
-    gameTitle = "역사 퀴즈",
+    gameTitle = "역사 퀴즈 어택",
     teacherProfile,
     setId,
     initialTitle = "",
@@ -331,7 +331,7 @@ export function HistorySetModal({
                             <Input
                                 value={title}
                                 onChange={(event) => setTitle(event.target.value)}
-                                placeholder="예: 역사 퀴즈 1단원"
+                                placeholder="예: 역사 퀴즈 어택 1단원"
                                 required
                             />
                         </div>

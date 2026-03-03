@@ -63,6 +63,10 @@ const PLAYERS: PlayerCharacter[] = [
     { id: 10, name: "Panda", emoji: "🐼", color: "text-neutral-700", bg: "bg-neutral-100", border: "border-neutral-300" },
 ];
 
+const WORD_CHAIN_SCORE_RULE = {
+    correctAnswer: 70,
+} as const;
+
 function normalizeAnswer(value: string) {
     return value.trim().replace(/\s+/g, "").toLowerCase();
 }
@@ -319,7 +323,7 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
 
         if (isCorrect) {
             setCorrectCount((prev) => prev + 1);
-            setScore((prev) => prev + 100);
+            setScore((prev) => prev + WORD_CHAIN_SCORE_RULE.correctAnswer);
         }
 
         const isLastQuestion = currentQuestionIndex >= questions.length - 1;
@@ -336,7 +340,7 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
 
             const nextQuestion = questions[nextQuestionIndex];
             setCurrentQuestionIndex(nextQuestionIndex);
-            setCurrentCharacterIndex((prev) => (prev + 1) % PLAYERS.length);
+            setCurrentCharacterIndex(nextQuestionIndex); // Match character index with question index.
             announcePrompt(nextQuestion);
         }, 1500);
     }, [announcePrompt, clearTimers, correctCount, currentQuestionIndex, endGame, questions, schedule]);
@@ -380,8 +384,7 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
         return Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
     }, [currentQuestionIndex, questions.length]);
 
-    const activePlayer = PLAYERS[currentCharacterIndex] || PLAYERS[0];
-
+    // We calculate activePlayer inline in the render loop now.
     if (gameState === "menu") {
         if (isTournamentInitializing) {
             return (
@@ -498,7 +501,7 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
                     </div>
 
                     {/* Stage Selection */}
-                    <div className="custom-scrollbar flex w-full max-w-3xl flex-col gap-4 overflow-y-auto max-h-[340px] pr-4 pb-2">
+                    <div className="custom-scrollbar flex w-full max-w-3xl flex-col gap-4 overflow-y-auto max-h-[380px] p-4 pb-8 pt-6">
                         {runtimeData.questions.length > 0 && runtimeData.setId ? (
                             <button
                                 key={runtimeData.setId}
@@ -585,153 +588,226 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
 
     if (!currentQuestion) return null;
 
+    const dynamicPlayers = questions.map((q, idx) => ({
+        id: `q-${idx}`,
+        name: `참여자 ${idx + 1}`,
+        imageSrc: `/images/word-chain/char_${(idx % 10) + 1}.png`,
+        hueRotate: 0
+    }));
+
     return (
-        <div className="relative overflow-hidden rounded-3xl border-[6px] border-[#ff0055] bg-[#1a1a2e] p-6 shadow-[12px_12px_0_0_#ff0055] text-white min-h-[600px]">
+        <div className="relative overflow-hidden rounded-3xl border-[6px] border-[#ff0055] bg-[#1a1a2e] shadow-[0_0_30px_#ff0055] text-white min-h-[650px] flex flex-col pt-6 px-6">
             <Image
                 src="/variety-bg.png"
                 alt="Variety Show Background"
                 fill
-                className="pointer-events-none object-cover opacity-20"
+                className="pointer-events-none object-cover opacity-10"
                 sizes="(max-width: 768px) 100vw, 1200px"
                 priority
             />
-            {/* CRT / Scanline Effect */}
-            <div className="pointer-events-none absolute inset-0 z-10 mix-blend-overlay opacity-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.03),rgba(0,255,0,0.01),rgba(0,0,255,0.03))] bg-[length:100%_3px,3px_100%]"></div>
+            {/* Scanline Effect */}
+            <div className="pointer-events-none absolute inset-0 z-10 mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.03),rgba(0,255,0,0.01),rgba(0,0,255,0.03))] bg-[length:100%_3px,3px_100%] rounded-3xl"></div>
 
-            <div className="relative z-20 space-y-4">
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md">
-                        <div className="text-xs font-bold text-gray-300">TIME</div>
-                        <p className={`font-pixel text-2xl ${timeLeft <= 2 ? "text-[#ff0055] animate-pulse" : "text-[#00eaff]"}`}>{timeLeft}s</p>
+            <div className="relative z-20 flex-1 flex flex-col h-full w-full">
+                {/* Stats Header */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-3 shrink-0">
+                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md flex items-center justify-between">
+                        <div className="text-[10px] sm:text-xs font-bold text-gray-300">QUESTION</div>
+                        <p className="font-pixel text-base sm:text-lg text-[#ffff00]">{currentQuestionIndex + 1} / {questions.length}</p>
                     </div>
-                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md">
-                        <div className="text-xs font-bold text-gray-300">QUESTION</div>
-                        <p className="font-pixel text-lg text-[#ffff00]">
-                            {currentQuestionIndex + 1} / {questions.length}
-                        </p>
+                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md flex items-center justify-between">
+                        <div className="text-[10px] sm:text-xs font-bold text-gray-300">CORRECT</div>
+                        <p className="font-pixel text-base sm:text-lg text-[#55efc4]">{correctCount}</p>
                     </div>
-                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md">
-                        <div className="text-xs font-bold text-gray-300">CORRECT</div>
-                        <p className="font-pixel text-lg text-[#55efc4]">{correctCount}</p>
-                    </div>
-                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md">
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-300">
-                            <Trophy className="h-4 w-4" /> SCORE
+                    <div className="rounded-xl border-2 border-black bg-white/10 backdrop-blur-sm p-3 shadow-md flex items-center justify-between col-span-2">
+                        <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-bold text-gray-300">
+                            <Trophy className="h-3 w-3 sm:h-4 sm:w-4 text-emerald-400" /> SCORE
                         </div>
-                        <p className="font-pixel text-lg text-[#74b9ff]">{score}</p>
+                        <p className="font-pixel text-base sm:text-lg text-[#74b9ff]">{score}</p>
                     </div>
                 </div>
 
-                <div className="rounded-xl border-2 border-black bg-white p-3">
-                    <div className="mb-2 flex items-center justify-between text-xs font-bold text-gray-600">
-                        <span>SHOW PROGRESS</span>
-                        <span>{progressPercent}%</span>
+                <div className="rounded-xl border-2 border-black bg-white/90 p-2.5 mb-5 shrink-0 shadow-sm backdrop-blur-md">
+                    <div className="mb-1.5 flex items-center justify-between text-[10px] sm:text-xs font-bold text-gray-700">
+                        <span className="font-pixel tracking-wider text-black">SHOW PROGRESS</span>
+                        <span className="font-black">{progressPercent}%</span>
                     </div>
-                    <div className="h-3 overflow-hidden rounded-full border border-black bg-slate-200">
+                    <div className="h-2.5 sm:h-3 overflow-hidden rounded-full border border-black bg-slate-200">
                         <div
-                            className="h-full bg-[linear-gradient(90deg,#6366f1,#22d3ee)] transition-all duration-300"
+                            className="h-full bg-[linear-gradient(90deg,#ff0055,#ffeb3b)] transition-all duration-300 shadow-[inset_0_2px_4px_rgba(255,255,255,0.5)]"
                             style={{ width: `${progressPercent}%` }}
                         />
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)]">
-                    <div className="rounded-2xl border-4 border-black bg-black/40 backdrop-blur-sm p-4 shadow-[5px_5px_0_0_#000]">
-                        <div className="mb-4 rounded-xl border-2 border-black bg-slate-800 p-3 pt-6 relative">
-                            <div className="absolute -top-4 -left-4 w-12 h-12 rotate-[-5deg]">
-                                <Image src="/word-chain-pd.png" alt="PD" fill className="object-contain" />
-                            </div>
-                            <div className="flex items-center gap-2 text-xs font-black text-amber-300 ml-8 mb-2">
-                                <Mic2 className="h-4 w-4" /> PD 나영석
-                            </div>
-                            <div className="mt-2 flex min-h-[80px] items-center justify-center">
-                                <SpeechBubble text={pdSpeech} isPd visible={turnPhase !== "result" || !!pdSpeech} />
-                            </div>
-                        </div>
-
-                        <div className={`rounded-xl border-2 border-black p-3 ${activePlayer.bg}`}>
-                            <div className="text-center">
-                                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-black bg-white text-5xl shadow-md">
-                                    {activePlayer.emoji}
-                                </div>
-                                <p className={`mt-2 font-pixel text-lg ${activePlayer.color}`}>{activePlayer.name}</p>
-                                <p className="text-xs font-bold text-gray-500">Active Character</p>
-                            </div>
-                            <div className="mt-3 flex min-h-[66px] items-center justify-center">
-                                <SpeechBubble
-                                    text={charSpeech}
-                                    isPd={false}
-                                    visible={!!charSpeech}
-                                    style={{ bg: activePlayer.bg, color: activePlayer.color, border: activePlayer.border }}
-                                />
-                            </div>
-                        </div>
+                {/* EMPHASIZED: Timer & PD Question */}
+                <div className="rounded-2xl border-[6px] border-[#ff0055] bg-black shadow-[0_15px_30px_rgba(255,0,85,0.4)] text-center mb-6 relative transform transition-all duration-300 flex-1 flex flex-col justify-center overflow-visible mx-1 mt-4">
+                    {/* The PD on top corner */}
+                    <div className="absolute -top-12 -left-6 sm:-left-8 w-24 h-24 sm:w-28 sm:h-28 rotate-[-10deg] drop-shadow-[4px_4px_0_rgba(0,0,0,1)] z-30 transition-transform duration-300 ease-in-out hover:scale-110">
+                        <Image src="/word-chain-pd.png" alt="PD" fill className="object-contain" />
+                    </div>
+                    <div className="absolute -top-5 left-16 sm:left-20 bg-[#ff0055] text-white px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-pixel border-[3px] border-black rounded-lg shadow-[3px_3px_0_0_#000] z-20 whitespace-nowrap animate-bounce">
+                        <Mic2 className="h-3 w-3 sm:h-4 sm:w-4 inline mr-1 text-yellow-300" />
+                        나영석 PD의 제시어!
                     </div>
 
-                    <div className="rounded-2xl border-4 border-black bg-black/40 backdrop-blur-sm p-5 shadow-[5px_5px_0_0_#000]">
-                        <h2 className="text-center font-pixel text-3xl text-white">{currentQuestion.prompt}</h2>
-                        <p className="mt-2 text-center text-sm font-bold text-gray-400">
-                            Enter the connected word for this prompt.
-                        </p>
+                    <div className="absolute inset-0 bg-[url('/bg-noise.png')] mix-blend-overlay opacity-30 rounded-xl pointer-events-none" />
 
-                        <div className="mt-6 grid grid-cols-2 gap-2 md:grid-cols-5">
-                            {PLAYERS.map((player, idx) => (
-                                <div
-                                    key={player.id}
-                                    className={`flex flex-col items-center rounded-lg border-2 px-2 py-2 transition-all ${idx === currentCharacterIndex
-                                        ? `${player.bg} ${player.border} scale-105 shadow`
-                                        : "border-slate-200 bg-slate-50 opacity-70"
-                                        }`}
-                                >
-                                    <span className="text-2xl">{player.emoji}</span>
-                                    <span className="mt-1 text-[11px] font-black text-slate-700">{player.name}</span>
-                                </div>
-                            ))}
+                    <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center p-6 sm:p-10 lg:p-12 gap-6 lg:gap-14 w-full h-full">
+                        {/* Prominent Question */}
+                        <div className="flex-1 flex flex-col justify-center items-center border-b-[4px] lg:border-b-0 lg:border-r-[4px] border-dashed border-[#ff0055]/50 pb-6 lg:pb-0 lg:pr-10 w-full min-h-[140px] sm:min-h-[180px]">
+                            <h2 className={`text-center font-pixel break-keep leading-tight drop-shadow-[5px_5px_0_#990033] ${currentQuestion.prompt.length > 8 ? "text-6xl sm:text-[80px] lg:text-[100px]" : "text-[80px] sm:text-[110px] lg:text-[150px]"} ${turnPhase === "pd_shout" ? "text-yellow-300 animate-pulse scale-105" : "text-white"}`}>
+                                {currentQuestion.prompt}
+                            </h2>
+                            {turnPhase === "pd_shout" ? (
+                                <p className="mt-4 sm:mt-6 text-center text-[14px] sm:text-[18px] font-bold text-[#00eaff] font-pixel animate-pulse">
+                                    ▶ 빨리 대답하세요! ◀
+                                </p>
+                            ) : (
+                                <p className="mt-4 sm:mt-6 text-center text-[12px] sm:text-[16px] font-bold text-gray-400 font-pixel opacity-70">
+                                    * 제시어에 맞춰 연결되는 단어를 대답하라!
+                                </p>
+                            )}
                         </div>
 
-                        <div className="mt-6 flex flex-col gap-3 md:flex-row">
-                            <Input
-                                value={inputValue}
-                                onChange={(event) => setInputValue(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        submitAnswer();
-                                    }
-                                }}
-                                disabled={turnPhase !== "answering"}
-                                placeholder={turnPhase === "answering" ? "Type answer..." : "Wait for PD cue..."}
-                                className="h-14 border-2 border-black bg-slate-50 text-lg font-bold text-black"
-                            />
-                            <Button
-                                onClick={submitAnswer}
-                                disabled={turnPhase !== "answering" || inputValue.trim().length === 0}
-                                className="h-14 min-w-[140px] border-2 border-black bg-[#6366f1] text-white hover:bg-[#4f46e5]"
-                            >
-                                Submit
-                            </Button>
-                        </div>
-
-                        <div className="mt-4 min-h-[56px] text-center">
-                            {turnPhase === "pd_shout" && (
-                                <div className="inline-flex rounded-full border-2 border-black bg-indigo-100 px-4 py-2 text-sm font-black text-indigo-700">
-                                    PD is shouting the prompt...
-                                </div>
-                            )}
-                            {turnPhase === "result" && resultMark === "O" && (
-                                <div className="inline-flex rounded-full border-2 border-black bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-700">
-                                    Correct! +100 points
-                                </div>
-                            )}
-                            {turnPhase === "result" && resultMark === "X" && (
-                                <div className="inline-flex rounded-full border-2 border-black bg-rose-100 px-4 py-2 text-sm font-black text-rose-700">
-                                    Wrong answer. Next character turn.
-                                </div>
-                            )}
+                        {/* Smaller Timer */}
+                        <div className="flex flex-col items-center justify-center min-w-[140px] sm:min-w-[180px]">
+                            <div className="text-[12px] sm:text-[16px] font-pixel text-[#ff0055] tracking-widest mb-1 sm:mb-2 bg-[#ff0055]/20 px-4 py-1.5 rounded-full border border-[#ff0055]">남은 시간</div>
+                            <div className={`font-pixel text-[60px] sm:text-[80px] lg:text-[100px] leading-none drop-shadow-[4px_4px_0_#990033] transition-colors duration-200 ${timeLeft <= 2 ? (turnPhase === "answering" ? "text-[#ff0055] animate-ping" : "text-gray-600") : "text-[#00eaff] [text-shadow:0_0_20px_rgba(0,234,255,0.4)]"}`}>
+                                {turnPhase === "answering" ? timeLeft : "5"}<span className="text-2xl sm:text-4xl text-[#ff0055] ml-1">s</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                {/* Input & Feedback Area */}
+                <div className="mb-4 sm:mb-6 shrink-0 relative z-20">
+                    <div className="flex flex-col gap-3 sm:flex-row max-w-4xl mx-auto">
+                        <Input
+                            value={inputValue}
+                            onChange={(event) => setInputValue(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    submitAnswer();
+                                }
+                            }}
+                            disabled={turnPhase !== "answering"}
+                            placeholder={turnPhase === "answering" ? "제시어에 이어지는 단어를 입력!" : "잠시만 대기..."}
+                            className={`h-14 sm:h-16 lg:h-20 border-[4px] border-black text-xl sm:text-2xl lg:text-3xl font-bold font-pixel text-center transition-colors placeholder:font-pixel placeholder:text-[14px] sm:placeholder:text-lg placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-[#ff0055] ${turnPhase === "answering" ? "bg-white text-black shadow-[4px_4px_0_0_#ff0055]" : "bg-gray-800 text-gray-500 border-gray-600"}`}
+                        />
+                        <Button
+                            onClick={submitAnswer}
+                            disabled={turnPhase !== "answering" || inputValue.trim().length === 0}
+                            className={`h-14 sm:h-16 lg:h-20 min-w-[120px] sm:min-w-[160px] lg:min-w-[200px] border-[4px] border-black text-xl sm:text-2xl lg:text-3xl font-pixel shadow-[4px_4px_0_0_#000] hover:translate-y-1 hover:shadow-[0_0_0_0_#000] transition-all duration-200 ${turnPhase === "answering" && inputValue.trim().length > 0
+                                ? "bg-[#ffff00] text-[#ff0055] hover:bg-[#ffe600]"
+                                : "bg-gray-800 text-gray-500 border-gray-600 shadow-[0_0_0_0_#000]"
+                                }`}
+                        >
+                            정답 제출!
+                        </Button>
+                    </div>
+
+                    <div className="mt-4 sm:mt-5 flex min-h-[60px] sm:min-h-[80px] items-center justify-center text-center max-w-4xl mx-auto overflow-visible relative z-30">
+                        {turnPhase === "pd_shout" && (
+                            <div className="relative inline-flex items-center justify-center border-[4px] sm:border-[6px] border-[#312e81] bg-[#4f46e5] px-6 sm:px-10 py-3 sm:py-4 text-[16px] sm:text-[24px] lg:text-[28px] font-pixel text-[#ffeb3b] animate-pulse shadow-[6px_6px_0_0_#000] rotate-[-1deg]">
+                                <div className="absolute inset-0 bg-[url('/bg-noise.png')] mix-blend-overlay opacity-30"></div>
+                                <Mic2 className="w-5 h-5 sm:w-8 sm:h-8 mr-2 text-white relative z-10" />
+                                <span className="relative z-10">PD님이 문제를 제시 중!</span>
+                            </div>
+                        )}
+                        {turnPhase === "result" && resultMark === "O" && (
+                            <div className="relative inline-flex flex-col sm:flex-row items-center justify-center border-[4px] sm:border-[6px] border-[#000] bg-[#ffff00] px-8 sm:px-14 py-3 sm:py-5 font-pixel shadow-[10px_10px_0_0_#ff0055,-6px_-6px_0_0_#00eaff] animate-bounce rotate-[2deg]">
+                                <div className="absolute inset-0 border-[3px] sm:border-[4px] border-dashed border-black/20 m-1 pointer-events-none"></div>
+                                <span className="text-[20px] sm:text-[32px] lg:text-[40px] text-[#ff0055] tracking-widest drop-shadow-[2px_2px_0_#fff] relative z-10 mr-0 sm:mr-4">
+                                    🎉 정답!!!
+                                </span>
+                                <span className="text-[14px] sm:text-[20px] lg:text-[24px] text-black bg-white px-3 py-1 border-[2px] sm:border-[3px] border-black shadow-[2px_2px_0_0_#000] relative z-10 mt-1 sm:mt-0">
+                                    +70 SCORE
+                                </span>
+                            </div>
+                        )}
+                        {turnPhase === "result" && resultMark === "X" && (
+                            <div className="relative inline-flex flex-col sm:flex-row items-center justify-center border-[4px] sm:border-[6px] border-[#ff0055] bg-black px-8 sm:px-14 py-3 sm:py-5 font-pixel shadow-[10px_10px_0_0_#00eaff,-6px_-6px_0_0_#000] animate-shake rotate-[-2deg]">
+                                <div className="absolute inset-0 border-[3px] sm:border-[4px] border-dashed border-[#ff0055]/40 m-1 pointer-events-none"></div>
+                                <span className="text-[20px] sm:text-[32px] lg:text-[40px] text-white tracking-widest drop-shadow-[2px_2px_0_#ff0055] relative z-10 mr-0 sm:mr-4">
+                                    💥 오답!
+                                </span>
+                                <span className="text-[14px] sm:text-[20px] lg:text-[24px] text-black bg-[#ff0055] text-white px-3 py-1 border-[2px] sm:border-[3px] border-[#fff] shadow-[2px_2px_0_0_#ff0055] relative z-10 mt-1 sm:mt-0">
+                                    다음 기회에...
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Subordinate Characters List: Maps directly to question set */}
+                <div className="mt-auto pt-4 sm:pt-6 border-t-[4px] border-dashed border-[#ff0055]/30 bg-black/40 rounded-t-[30px] -mx-6 -mb-6 px-6 sm:px-10 pb-6 backdrop-blur-md relative z-40">
+                    <div className="text-center mb-0 font-pixel text-[10px] sm:text-xs text-[#00eaff] tracking-widest drop-shadow-[2px_2px_0_#000] relative z-10 pointer-events-none">
+                        문제 리스트 및 순서 ( {currentQuestionIndex + 1} / {questions.length} )
+                    </div>
+
+                    <div className="flex flex-nowrap items-center justify-start sm:justify-center gap-4 sm:gap-6 pt-20 pb-10 px-4 -mt-6 overflow-x-auto custom-scrollbar relative z-20">
+                        {dynamicPlayers.map((player, idx) => (
+                            <div
+                                key={player.id}
+                                className={`shrink-0 relative flex flex-col items-center justify-center rounded-xl p-2 sm:p-2.5 transition-all duration-300 ${idx === currentCharacterIndex
+                                    ? "border-[3px] sm:border-[4px] border-[#ffff00] bg-black scale-110 sm:scale-125 shadow-[0_0_20px_#ffff00] z-10 mx-2 sm:mx-4"
+                                    : idx < currentCharacterIndex
+                                        ? "border-[2px] sm:border-[3px] border-green-800 bg-[#0f172a] opacity-30 grayscale"
+                                        : "border-[2px] sm:border-[3px] border-slate-700 bg-[#1e293b] opacity-70 hover:opacity-100 hover:border-slate-500"
+                                    }`}
+                                style={{
+                                    transform: idx === currentCharacterIndex ? "scale(1.15) translateY(-5px)" : "scale(1) translateY(0)",
+                                }}
+                            >
+                                <div className="w-[52px] h-[52px] sm:w-[68px] sm:h-[68px] lg:w-[80px] lg:h-[80px] relative overflow-hidden rounded-lg bg-black border-[3px] border-white/10 shadow-inner">
+                                    <img
+                                        src={player.imageSrc}
+                                        alt={player.name}
+                                        className="w-full h-full object-contain p-1"
+                                    />
+                                </div>
+
+                                {idx === currentCharacterIndex && (
+                                    <>
+                                        <span className="absolute -top-3 -right-3 sm:-top-4 sm:-right-4 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#ff0055] text-white text-[12px] sm:text-[14px] font-pixel flex items-center justify-center shadow-[2px_2px_0_0_#990033] border-[2px] sm:border-[3px] border-black animate-bounce z-20">
+                                            Q
+                                        </span>
+                                        {turnPhase === "result" && charSpeech && (
+                                            <div className="absolute -top-[50px] sm:-top-[60px] whitespace-nowrap z-50 animate-fade-in-up">
+                                                <div className="relative rounded-xl border-2 sm:border-[3px] border-black bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-[13px] font-bold text-black shadow-lg">
+                                                    {charSpeech}
+                                                    <div className="absolute -bottom-2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-b-2 sm:border-b-[3px] border-r-2 sm:border-r-[3px] border-black bg-white" />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
+            {/* Custom Tailwind utilities for the game */}
+            <style jsx global>{`
+                @keyframes fade-in-up {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in-up {
+                    animation: fade-in-up 0.3s ease-out forwards;
+                }
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    25% { transform: translateX(-5px); }
+                    50% { transform: translateX(5px); }
+                    75% { transform: translateX(-5px); }
+                }
+                .animate-shake {
+                    animation: shake 0.4s ease-in-out;
+                }
+            `}</style>
         </div>
     );
 }
