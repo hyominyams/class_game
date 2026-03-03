@@ -136,7 +136,17 @@
   - `GAME_REWARD:<gameId>` reason이 기존 랭킹 집계에 포함되는지 확인
   - 별도 집계 규칙이 필요하면 액션 레벨에서 명시 추가
 
-3. 대회 생성/목록 라벨 반영
+3. 코인 경제 일관성/상점 회귀 확인
+- 파일:
+  - `app/actions/store.ts`
+  - `app/actions/teacher-v2.ts`
+  - `app/constants/economy.ts`
+- 작업:
+  - 신규 게임 보상이 `GAME_REWARD:<gameId>` reason으로 기록되는지 확인
+  - `coin_transactions` 원장과 `profiles.coin_balance` 캐시가 불일치하지 않는지 점검
+  - 상점 구매 경로(`purchase_item_atomic`)에 신규 게임 반영이 부작용을 만들지 않는지 스모크 테스트
+
+4. 대회 생성/목록 라벨 반영
 - 파일:
   - `components/teacher/create-tournament-modal.tsx`
   - `components/teacher/tournament-list-client.tsx`
@@ -146,7 +156,7 @@
   - 신규 `gameId` 라벨 추가
   - 대회 UI에서 게임명이 `id`로 노출되지 않도록 확인
 
-4. 배지/통계 조건 점검(선택이지만 권장)
+5. 배지/통계 조건 점검(선택이지만 권장)
 - 파일: `app/actions/stats.ts`
 - 작업:
   - 신규 게임 관련 배지 조건이 필요하면 추가
@@ -192,6 +202,9 @@
 ### 점수/대회/대시보드
 - [ ] 신규 게임 컴포넌트에서 `saveGameResult` 호출
 - [ ] 신규 게임 컴포넌트에서 tournament RPC 흐름 연동
+- [ ] `app/actions/store.ts`의 `purchase_item_atomic` 성공/실패 스모크 테스트에서 회귀 없음
+- [ ] `app/actions/ranking.ts` 기준으로 주간/월간/게임별/대회 랭킹에 신규 게임 반영 확인
+- [ ] `app/student/ranking/page.tsx`에서 신규 게임 선택 탭 노출 확인
 - [ ] `components/teacher/create-tournament-modal.tsx` 라벨/정렬 반영
 - [ ] `components/teacher/tournament-list-client.tsx` 라벨 반영
 - [ ] `app/teacher/dashboard/page.tsx` 라벨 반영
@@ -220,6 +233,8 @@
 5. 코인/집계
 - [ ] 게임 종료 시 `coin_transactions` 기록 생성
 - [ ] `profiles.coin_balance` 캐시와 불일치 없음
+- [ ] 상점 구매 성공/잔액부족 실패 시 원장/잔액/아이템 반영이 원자적으로 일치
+- [ ] `GAME_REWARD:<gameId>` reason이 주간/월간 랭킹 집계에서 누락되지 않음
 - [ ] 랭킹/대시보드에서 신규 게임 로그가 정상 표기
 
 ## 5. 권장 검증 명령
@@ -234,6 +249,8 @@ DB 점검(예시):
 select id, title from public.games order by id;
 select id, game_id, grade, class, is_active from public.question_sets where game_id = '<new-game-id>';
 select user_id, game_id, score, play_time from public.game_logs where game_id = '<new-game-id>' order by created_at desc limit 20;
+select reason, amount, created_at from public.coin_transactions where reason like 'GAME_REWARD:<new-game-id>%' order by created_at desc limit 20;
+select tournament_id, user_id, score, play_time from public.tournament_logs order by created_at desc limit 20;
 ```
 
 ## 6. 릴리즈/롤백 가이드
@@ -252,4 +269,5 @@ select user_id, game_id, score, play_time from public.game_logs where game_id = 
 - 학생 게임 목록, 대회 라벨, 대시보드 라벨에 하드코딩 지점이 남아 있다. 신규 게임 추가 시 한 군데만 수정하면 누락이 발생한다.
 - 문제 타입 분기는 `app/actions/game-data.ts`가 핵심 단일 지점이다. 이 매핑 누락 시 생성은 되더라도 조회/수정이 깨진다.
 - CSV는 모든 게임에서 필수다. 신규 게임 모달에 업로드/다운로드가 빠지면 운영 정책 위반이다.
+- 랭킹 집계는 reason 기반 필터를 사용한다. 보상 reason 규칙(`GAME_REWARD:<gameId>`)을 벗어나면 주간/월간 랭킹에서 누락된다.
 - 인코딩 정책은 UTF-8(무BOM) 기준이다. 커밋 전 `npm run check:utf8`를 반드시 통과해야 한다.

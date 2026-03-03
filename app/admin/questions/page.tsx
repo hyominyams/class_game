@@ -34,7 +34,7 @@ const FALLBACK_GAMES: GameItem[] = [
     { id: "word-runner", title: "단어 디펜스" },
     { id: "word-chain", title: "단어 연결" },
     { id: "history-quiz", title: "역사 퀴즈 어택" },
-    { id: "pixel-runner", title: "픽셀러너" },
+    { id: "pixel-runner", title: "픽셀 러너" },
 ];
 
 export default async function AdminQuestionsPage({
@@ -117,7 +117,7 @@ export default async function AdminQuestionsPage({
                         <p className="text-sm text-gray-500 mb-1">
                             {setItem.grade && setItem.class ? `${setItem.grade}학년 ${setItem.class}반` : "전체 공개"}
                         </p>
-                        <p className="text-xs text-gray-400 mb-4">생성자: {setItem.creator?.nickname || "알 수 없음"}</p>
+                        <p className="text-xs text-gray-400 mb-4">생성자: {setItem.creator?.nickname || "이름 없음"}</p>
 
                         <div className="mt-auto flex gap-2 pt-4 border-t border-dashed border-gray-300">
                             <QuestionSetModalWrapper

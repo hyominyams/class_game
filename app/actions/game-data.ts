@@ -170,7 +170,7 @@ function isAuthError(context: AuthContext | { error: string }): context is { err
     return "error" in context;
 }
 
-function ensureTeacherScope(context: AuthContext, grade: number, classNum: number): string | null {
+function ensureTeacherScope(context: AuthContext, grade: number | null, classNum: number | null): string | null {
     if (context.role !== "teacher") {
         return null;
     }
@@ -244,8 +244,8 @@ function revalidateQuestionPages() {
 export async function createQuestionSet(
     gameId: string,
     title: string,
-    grade: number,
-    classNum: number,
+    grade: number | null,
+    classNum: number | null,
     questionsData: QuestionInput[],
     options?: QuestionSetOptions
 ) {
@@ -295,8 +295,8 @@ export async function createQuestionSet(
 export async function updateQuestionSet(
     setId: string,
     title: string,
-    grade: number,
-    classNum: number,
+    grade: number | null,
+    classNum: number | null,
     questionsData: QuestionInput[],
     options?: QuestionSetOptions
 ) {

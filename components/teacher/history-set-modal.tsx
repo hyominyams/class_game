@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createQuestionSet, getQuestions, updateQuestionSet } from "@/app/actions/game-data";
+import { generateQuestionsWithAI } from "@/app/actions/question-ai";
+import { AiQuestionGeneratePanel, type AiGenerationConfig } from "./ai-question-generate-panel";
 import { downloadHistoryTemplateCsv, parseHistoryCsvFile } from "./question-csv-utils";
 
 type TeacherProfile = {
@@ -32,6 +34,13 @@ type HistoryQuestionRow = {
     options: unknown;
     correct_answer: number | null;
     answer_text: string | null;
+};
+
+type GeneratedHistoryQuestion = {
+    text?: unknown;
+    type?: unknown;
+    options?: unknown;
+    answer?: unknown;
 };
 
 const EMPTY_OPTIONS: [string, string, string, string] = ["", "", "", ""];
@@ -83,6 +92,7 @@ export function HistorySetModal({
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
 
     const defaultGrade = useMemo(() => {
         if (typeof initialGrade === "number") return String(initialGrade);
@@ -218,6 +228,79 @@ export function HistorySetModal({
         }
     };
 
+    const handleAiGenerate = async (config: AiGenerationConfig) => {
+        setAiLoading(true);
+
+        try {
+            const result = await generateQuestionsWithAI({
+                gameId,
+                difficultyCounts: config.difficultyCounts,
+                topicMode: config.topicMode,
+                topic: config.topic,
+            });
+
+            if (!result.success) {
+                alert(result.error || "AI 문제 생성에 실패했습니다.");
+                return;
+            }
+
+            const generatedRows = Array.isArray(result.questions) ? result.questions : [];
+            const nextQuestions = generatedRows
+                .map((item) => {
+                    const row = item as GeneratedHistoryQuestion;
+                    const text = typeof row.text === "string" ? row.text.trim() : "";
+                    const rawType = typeof row.type === "string" ? row.type.trim() : "";
+                    const type: QuestionType = rawType === "short-answer" ? "short-answer" : "multiple-choice";
+
+                    if (!text) return null;
+
+                    if (type === "multiple-choice") {
+                        const optionsRaw = Array.isArray(row.options) ? row.options : [];
+                        const options = optionsRaw
+                            .map((value) => (typeof value === "string" ? value.trim() : ""))
+                            .filter(Boolean)
+                            .slice(0, 4);
+
+                        const answerIndex = Number(row.answer);
+                        if (options.length !== 4 || !Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
+                            return null;
+                        }
+
+                        return {
+                            text,
+                            type,
+                            options: [options[0], options[1], options[2], options[3]] as [string, string, string, string],
+                            answer: answerIndex,
+                        };
+                    }
+
+                    const shortAnswer = typeof row.answer === "string" ? row.answer.trim() : "";
+                    if (!shortAnswer) return null;
+
+                    return {
+                        text,
+                        type,
+                        options: [...EMPTY_OPTIONS],
+                        answer: shortAnswer,
+                    };
+                })
+                .filter((row): row is QuestionState => Boolean(row));
+
+            if (nextQuestions.length === 0) {
+                alert("AI가 유효한 문항을 생성하지 못했습니다. 다시 시도해 주세요.");
+                return;
+            }
+
+            setQuestions(nextQuestions);
+            alert(`${nextQuestions.length}개 문항을 자동 생성했습니다.`);
+        } catch (error) {
+            console.error("Failed to generate AI history questions:", error);
+            alert("AI 문제 생성 중 오류가 발생했습니다.");
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
 
@@ -225,12 +308,12 @@ export function HistorySetModal({
         const parsedClass = parseNumericInput(classNum);
 
         if (!title.trim()) {
-            alert("세트 제목을 입력해주세요.");
+            alert("세트 제목을 입력해 주세요.");
             return;
         }
 
         if (Number.isNaN(parsedGrade) || Number.isNaN(parsedClass)) {
-            alert("학년/반을 올바르게 서식에 맞춰 입력해주세요. (글로벌은 빈칸)");
+            alert("학년/반을 올바른 숫자 형식으로 입력해 주세요. (공통은 빈칸)");
             return;
         }
 
@@ -242,23 +325,23 @@ export function HistorySetModal({
         for (let i = 0; i < questions.length; i += 1) {
             const current = questions[i];
             if (!current.text.trim()) {
-                alert(`${i + 1}번 문항의 문제 텍스트를 입력해주세요.`);
+                alert(`${i + 1}번 문항의 문제 텍스트를 입력해 주세요.`);
                 return;
             }
 
             if (current.type === "multiple-choice") {
                 if (current.options.some((option) => !option.trim())) {
-                    alert(`${i + 1}번 객관식 문항의 보기를 모두 입력해주세요.`);
+                    alert(`${i + 1}번 객관식 문항의 보기를 모두 입력해 주세요.`);
                     return;
                 }
 
                 const answerIndex = Number(current.answer);
                 if (!Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
-                    alert(`${i + 1}번 객관식 문항의 정답 보기를 선택해주세요.`);
+                    alert(`${i + 1}번 객관식 문항의 정답 보기를 선택해 주세요.`);
                     return;
                 }
             } else if (!String(current.answer || "").trim()) {
-                alert(`${i + 1}번 주관식 문항의 정답을 입력해주세요.`);
+                alert(`${i + 1}번 단답형 문항의 정답을 입력해 주세요.`);
                 return;
             }
         }
@@ -343,6 +426,13 @@ export function HistorySetModal({
                         </div>
                     </div>
 
+                    <AiQuestionGeneratePanel
+                        gameId={gameId}
+                        loading={aiLoading}
+                        disabled={loading}
+                        onGenerate={handleAiGenerate}
+                    />
+
                     <div className="rounded-xl border-2 border-black p-4 bg-[#ffe9ef] space-y-3">
                         <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
                             <p className="text-sm font-bold">CSV 업로드 (예시 양식 참고)</p>
@@ -384,7 +474,7 @@ export function HistorySetModal({
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="multiple-choice">객관식 4지선다</SelectItem>
-                                                <SelectItem value="short-answer">주관식</SelectItem>
+                                                <SelectItem value="short-answer">단답형</SelectItem>
                                             </SelectContent>
                                         </Select>
 
@@ -410,7 +500,7 @@ export function HistorySetModal({
 
                                 {question.type === "multiple-choice" ? (
                                     <div className="mt-2 bg-gray-50 p-4 rounded-xl border-2 border-gray-200">
-                                        <p className="text-xs font-bold text-gray-500 mb-3">✓ 정답인 보기의 체크박스를 선택하세요</p>
+                                        <p className="text-xs font-bold text-gray-500 mb-3">정답은 체크박스를 선택해 주세요.</p>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             {question.options.map((option, optionIndex) => {
                                                 const isCorrect = Number(question.answer) === optionIndex;
@@ -418,8 +508,8 @@ export function HistorySetModal({
                                                     <div
                                                         key={`${questionIndex}-${optionIndex}`}
                                                         className={`flex items-center gap-3 p-2 border-2 rounded-lg transition-all ${isCorrect
-                                                                ? "border-green-500 bg-green-50 shadow-[2px_2px_0px_rgba(34,197,94,1)]"
-                                                                : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                                                            ? "border-green-500 bg-green-50 shadow-[2px_2px_0px_rgba(34,197,94,1)]"
+                                                            : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
                                                             }`}
                                                         onClick={() => updateQuestion(questionIndex, { answer: optionIndex })}
                                                     >
@@ -443,9 +533,9 @@ export function HistorySetModal({
                                     </div>
                                 ) : (
                                     <div className="mt-2 bg-gray-50 p-4 rounded-xl border-2 border-gray-200">
-                                        <p className="text-xs font-bold text-gray-500 mb-3">✓ 주관식 정답을 입력하세요</p>
+                                        <p className="text-xs font-bold text-gray-500 mb-3">단답형 정답을 입력해 주세요.</p>
                                         <Input
-                                            placeholder="주관식 정답"
+                                            placeholder="단답형 정답"
                                             value={String(question.answer || "")}
                                             onChange={(event) => updateQuestion(questionIndex, { answer: event.target.value })}
                                             className="border-2 border-black focus-visible:ring-0 bg-white"
@@ -457,7 +547,7 @@ export function HistorySetModal({
                         ))}
                     </div>
 
-                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading}>
+                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading || aiLoading}>
                         {loading ? "저장 중..." : "문제세트 저장"}
                     </Button>
                 </form>

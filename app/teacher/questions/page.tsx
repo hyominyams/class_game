@@ -34,7 +34,7 @@ const FALLBACK_GAMES: GameItem[] = [
     { id: "word-runner", title: "단어 디펜스" },
     { id: "word-chain", title: "단어 연결" },
     { id: "history-quiz", title: "역사 퀴즈 어택" },
-    { id: "pixel-runner", title: "픽셀러너" },
+    { id: "pixel-runner", title: "픽셀 러너" },
 ];
 
 export default async function TeacherQuestionsPage({

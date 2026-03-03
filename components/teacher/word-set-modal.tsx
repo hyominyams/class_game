@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createQuestionSet, getQuestions, updateQuestionSet } from "@/app/actions/game-data";
+import { generateQuestionsWithAI } from "@/app/actions/question-ai";
+import { AiQuestionGeneratePanel, type AiGenerationConfig } from "./ai-question-generate-panel";
 import { downloadWordDefenseTemplateCsv, parseWordDefenseCsvFile } from "./question-csv-utils";
 
 type TeacherProfile = {
@@ -28,6 +30,11 @@ type MultipleChoiceQuestionRow = {
     answer_text: string | null;
 };
 
+type GeneratedWordPair = {
+    english?: unknown;
+    korean?: unknown;
+};
+
 function normalizeNumericInput(value: string) {
     if (!value || value.trim() === "") return null;
     const parsed = Number(value);
@@ -44,14 +51,14 @@ function normalizeQuestionMode(value: unknown): WordQuestionMode {
 
 function getQuestionModeDescription(mode: WordQuestionMode) {
     if (mode === "ko_to_en") {
-        return "한국어 뜻이 나오고 영어 단어를 입력합니다.";
+        return "한글 뜻이 나오고 영어 단어를 입력합니다.";
     }
 
     if (mode === "mixed") {
-        return "영-한/한-영 문제가 섞여서 출제됩니다.";
+        return "영어/한글 문제가 섞여서 출제됩니다.";
     }
 
-    return "영어 단어가 나오고 한국어 뜻을 입력합니다.";
+    return "영어 단어가 나오고 한글 뜻을 입력합니다.";
 }
 
 export function WordSetModal({
@@ -78,6 +85,7 @@ export function WordSetModal({
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
 
     const defaultGrade = useMemo(() => {
         if (typeof initialGrade === "number") return String(initialGrade);
@@ -184,6 +192,50 @@ export function WordSetModal({
         }
     };
 
+    const handleAiGenerate = async (config: AiGenerationConfig) => {
+        setAiLoading(true);
+
+        try {
+            const result = await generateQuestionsWithAI({
+                gameId,
+                difficultyCounts: config.difficultyCounts,
+                topicMode: config.topicMode,
+                topic: config.topic,
+            });
+
+            if (!result.success) {
+                alert(result.error || "AI 문제 생성에 실패했습니다.");
+                return;
+            }
+
+            const generatedRows = Array.isArray(result.questions) ? result.questions : [];
+            const nextWords = generatedRows
+                .map((item) => {
+                    const row = item as GeneratedWordPair;
+                    const english = typeof row.english === "string" ? row.english.trim() : "";
+                    const korean = typeof row.korean === "string" ? row.korean.trim() : "";
+
+                    if (!english || !korean) return null;
+
+                    return { english, korean };
+                })
+                .filter((row): row is WordPair => Boolean(row));
+
+            if (nextWords.length === 0) {
+                alert("AI가 유효한 문항을 생성하지 못했습니다. 다시 시도해 주세요.");
+                return;
+            }
+
+            setWords(nextWords);
+            alert(`${nextWords.length}개 문항을 자동 생성했습니다.`);
+        } catch (error) {
+            console.error("Failed to generate AI word questions:", error);
+            alert("AI 문제 생성 중 오류가 발생했습니다.");
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
 
@@ -196,7 +248,7 @@ export function WordSetModal({
         }
 
         if (Number.isNaN(parsedGrade) || Number.isNaN(parsedClass)) {
-            alert("학년/반을 올바르게 서식에 맞춰 입력해주세요. (글로벌은 빈칸)");
+            alert("학년/반을 올바른 숫자 형식으로 입력해 주세요. (공통은 빈칸)");
             return;
         }
 
@@ -206,7 +258,7 @@ export function WordSetModal({
         }
 
         if (words.some((word) => !word.english.trim() || !word.korean.trim())) {
-            alert("모든 문항의 영어/뜻을 입력해 주세요.");
+            alert("모든 문항에 영어/뜻을 입력해 주세요.");
             return;
         }
 
@@ -301,14 +353,21 @@ export function WordSetModal({
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="border-2 border-black bg-white">
-                                    <SelectItem value="en_to_ko">영-한 모드</SelectItem>
-                                    <SelectItem value="ko_to_en">한-영 모드</SelectItem>
+                                    <SelectItem value="en_to_ko">영어→한글 모드</SelectItem>
+                                    <SelectItem value="ko_to_en">한글→영어 모드</SelectItem>
                                     <SelectItem value="mixed">혼합 모드</SelectItem>
                                 </SelectContent>
                             </Select>
                             <p className="text-xs font-bold text-gray-500">{getQuestionModeDescription(questionMode)}</p>
                         </div>
                     </div>
+
+                    <AiQuestionGeneratePanel
+                        gameId={gameId}
+                        loading={aiLoading}
+                        disabled={loading}
+                        onGenerate={handleAiGenerate}
+                    />
 
                     <div className="rounded-xl border-2 border-black p-4 bg-[#fff7df] space-y-3">
                         <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
@@ -344,7 +403,7 @@ export function WordSetModal({
                                     required
                                 />
                                 <Input
-                                    placeholder="뜻 (한글)"
+                                    placeholder="한글(뜻)"
                                     value={word.korean}
                                     onChange={(event) => updateWord(idx, "korean", event.target.value)}
                                     required
@@ -363,7 +422,7 @@ export function WordSetModal({
                         ))}
                     </div>
 
-                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading}>
+                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading || aiLoading}>
                         {loading ? "저장 중..." : "문제세트 저장"}
                     </Button>
                 </form>

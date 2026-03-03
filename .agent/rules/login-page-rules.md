@@ -9,13 +9,13 @@ trigger: model_decision
 ## 1. 개요
 - **위치**: `d:\class_game\app\login\page.tsx`, `d:\class_game\components\auth\retro-login.tsx`
 - **컨셉**: 90년대 PC OS 및 고전 픽셀 게임 UI의 아기자기하고 정교한 디자인.
-- **핵심 컬러**: 
+- **핵심 컬러**:
   - 기본: `#fdf5e6` (Old Paper), `#b2c4ff` (Grid Blue).
   - 강조: `#34d399` (Mint), `#ff2e63` (Neon Pink), `#fbbf24` (Amber).
 
 ## 2. 디자인 가이드라인
 - **그리드 배경**: 배경은 항상 밝은 블루 톤의 격자(`40px grid`) 패턴을 포함하여 설계 도면이나 고전 게임 월드 느낌을 주어야 합니다.
-- **윈도우 창 디자인**: 
+- **윈도우 창 디자인**:
   - 모든 컨테이너는 두꺼운 검은색 테두리(`border-[4px]`)와 투박한 오프셋 그림자(`shadow-[12px_12px_0px_#18181b]`)를 가집니다.
   - 상단에는 항상 타이틀 바와 창 조절 버튼(_, [], X) 데코를 포함합니다.
 - **폰트**: 반드시 `Press Start 2P`와 같은 8비트 픽셀 폰트를 사용하여 텍스트 가독성과 테마를 일치시킵니다.

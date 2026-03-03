@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { getAccounts, deleteAccount, bulkCreateAccounts, BulkUserRow } from "@/app/admin/accounts/actions";
 import { Trash2, Download, Upload, Users, GraduationCap } from "lucide-react";
+import { AddAccountModal } from "./add-account-modal";
 
 export function AccountManager() {
     const [activeTab, setActiveTab] = useState<'teacher' | 'student'>('teacher');
@@ -173,7 +174,7 @@ export function AccountManager() {
                         <Label htmlFor="grade" className="text-xs font-bold text-gray-600 block mb-1">학년</Label>
                         <select
                             id="grade"
-                            value={gradeFilter}
+                            value={gradeFilter !== null ? String(gradeFilter) : ''}
                             onChange={(e) => setGradeFilter(e.target.value ? Number(e.target.value) : '')}
                             className="w-full border-2 border-black p-2 rounded cursor-pointer"
                         >
@@ -189,7 +190,7 @@ export function AccountManager() {
                             id="class"
                             type="number"
                             placeholder="전체"
-                            value={classFilter}
+                            value={classFilter !== null ? String(classFilter) : ''}
                             onChange={(e) => setClassFilter(e.target.value ? Number(e.target.value) : '')}
                             className="border-2 border-black w-full"
                         />
@@ -214,14 +215,18 @@ export function AccountManager() {
                             ref={fileInputRef}
                             onChange={handleFileUpload}
                         />
-                        <Button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="bg-[#2d3436] text-white border-2 border-black shadow-[2px_2px_0_0_black] hover:bg-[#636e72] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all active:shadow-none active:translate-y-[2px] active:translate-x-[2px]"
-                            disabled={isLoading}
-                        >
-                            <Upload className="w-4 h-4 mr-2" />
-                            CSV 일괄 업로드
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="bg-[#2d3436] text-white border-2 border-black shadow-[2px_2px_0_0_black] hover:bg-[#636e72] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all active:shadow-none active:translate-y-[2px] active:translate-x-[2px]"
+                                disabled={isLoading}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                합계 일괄 업로드
+                            </Button>
+
+                            <AddAccountModal role={activeTab} onSuccess={loadAccounts} />
+                        </div>
                     </div>
                 </div>
             </div>

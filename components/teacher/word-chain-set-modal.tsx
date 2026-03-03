@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createQuestionSet, getQuestions, updateQuestionSet } from "@/app/actions/game-data";
+import { generateQuestionsWithAI } from "@/app/actions/question-ai";
+import { AiQuestionGeneratePanel, type AiGenerationConfig } from "./ai-question-generate-panel";
 import { downloadWordChainTemplateCsv, parseWordChainCsvFile } from "./question-csv-utils";
 
 type TeacherProfile = {
@@ -25,6 +27,12 @@ type WordChainQuestionRow = {
     prompt: string | null;
     answer: string | null;
     accepted_answers: unknown;
+};
+
+type GeneratedWordChainQuestion = {
+    prompt?: unknown;
+    answer?: unknown;
+    acceptedAnswers?: unknown;
 };
 
 function parseNumericInput(value: string) {
@@ -77,6 +85,7 @@ export function WordChainSetModal({
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
 
     const defaultGrade = useMemo(() => {
         if (typeof initialGrade === "number") return String(initialGrade);
@@ -185,6 +194,58 @@ export function WordChainSetModal({
         }
     };
 
+    const handleAiGenerate = async (config: AiGenerationConfig) => {
+        setAiLoading(true);
+
+        try {
+            const result = await generateQuestionsWithAI({
+                gameId,
+                difficultyCounts: config.difficultyCounts,
+                topicMode: config.topicMode,
+                topic: config.topic,
+            });
+
+            if (!result.success) {
+                alert(result.error || "AI 문제 생성에 실패했습니다.");
+                return;
+            }
+
+            const generatedRows = Array.isArray(result.questions) ? result.questions : [];
+            const nextQuestions = generatedRows
+                .map((item) => {
+                    const row = item as GeneratedWordChainQuestion;
+                    const prompt = typeof row.prompt === "string" ? row.prompt.trim() : "";
+                    const answer = typeof row.answer === "string" ? row.answer.trim() : "";
+                    const acceptedAnswersRaw = Array.isArray(row.acceptedAnswers) ? row.acceptedAnswers : [];
+                    const acceptedAnswers = acceptedAnswersRaw
+                        .map((value) => (typeof value === "string" ? value.trim() : ""))
+                        .filter(Boolean);
+
+                    if (!prompt || !answer) return null;
+
+                    return {
+                        prompt,
+                        answer,
+                        acceptedAnswers: Array.from(new Set([answer, ...acceptedAnswers])),
+                    };
+                })
+                .filter((row): row is WordChainQuestion => Boolean(row));
+
+            if (nextQuestions.length === 0) {
+                alert("AI가 유효한 문항을 생성하지 못했습니다. 다시 시도해 주세요.");
+                return;
+            }
+
+            setQuestions(nextQuestions);
+            alert(`${nextQuestions.length}개 문항을 자동 생성했습니다.`);
+        } catch (error) {
+            console.error("Failed to generate AI word-chain questions:", error);
+            alert("AI 문제 생성 중 오류가 발생했습니다.");
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
 
@@ -192,12 +253,12 @@ export function WordChainSetModal({
         const parsedClass = parseNumericInput(classNum);
 
         if (!title.trim()) {
-            alert("세트 제목을 입력해주세요.");
+            alert("세트 제목을 입력해 주세요.");
             return;
         }
 
         if (Number.isNaN(parsedGrade) || Number.isNaN(parsedClass)) {
-            alert("학년/반을 올바르게 서식에 맞춰 입력해주세요. (글로벌은 빈칸)");
+            alert("학년/반을 올바른 숫자 형식으로 입력해 주세요. (공통은 빈칸)");
             return;
         }
 
@@ -209,7 +270,7 @@ export function WordChainSetModal({
         for (let i = 0; i < questions.length; i += 1) {
             const question = questions[i];
             if (!question.prompt.trim() || !question.answer.trim()) {
-                alert(`${i + 1}번 문항의 제시어와 정답을 입력해주세요.`);
+                alert(`${i + 1}번 문항의 제시어와 정답을 입력해 주세요.`);
                 return;
             }
         }
@@ -292,6 +353,13 @@ export function WordChainSetModal({
                         </div>
                     </div>
 
+                    <AiQuestionGeneratePanel
+                        gameId={gameId}
+                        loading={aiLoading}
+                        disabled={loading}
+                        onGenerate={handleAiGenerate}
+                    />
+
                     <div className="rounded-xl border-2 border-black p-4 bg-[#e8f8f5] space-y-3">
                         <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
                             <p className="text-sm font-bold">CSV 업로드 (예시 양식 참고)</p>
@@ -357,7 +425,7 @@ export function WordChainSetModal({
                         ))}
                     </div>
 
-                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading}>
+                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading || aiLoading}>
                         {loading ? "저장 중..." : "문제세트 저장"}
                     </Button>
                 </form>

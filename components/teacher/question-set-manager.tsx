@@ -143,7 +143,7 @@ export function QuestionSetManager({
                     className="bg-[#ffeaa7] text-black border-2 border-black hover:bg-[#fdcb6e] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
                 >
                     <Plus className="w-4 h-4 mr-2" />
-                    새 문제 세트 만들기
+                    문제세트 만들기
                 </Button>
             </QuestionSetModalWrapper>
         </div>
