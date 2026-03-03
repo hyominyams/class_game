@@ -280,7 +280,7 @@ export function HistorySetModal({
                     return {
                         text,
                         type,
-                        options: [...EMPTY_OPTIONS],
+                        options: [...EMPTY_OPTIONS] as [string, string, string, string],
                         answer: shortAnswer,
                     };
                 })
