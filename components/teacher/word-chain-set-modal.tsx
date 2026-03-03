@@ -28,6 +28,7 @@ type WordChainQuestionRow = {
 };
 
 function parseNumericInput(value: string) {
+    if (!value || value.trim() === "") return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : NaN;
 }
@@ -196,7 +197,12 @@ export function WordChainSetModal({
         }
 
         if (Number.isNaN(parsedGrade) || Number.isNaN(parsedClass)) {
-            alert("학년/반을 올바르게 입력해주세요.");
+            alert("학년/반을 올바르게 서식에 맞춰 입력해주세요. (글로벌은 빈칸)");
+            return;
+        }
+
+        if ((parsedGrade === null && parsedClass !== null) || (parsedGrade !== null && parsedClass === null)) {
+            alert("학년/반은 모두 입력하거나 모두 빈칸이어야 합니다.");
             return;
         }
 
@@ -260,16 +266,16 @@ export function WordChainSetModal({
                                     type="number"
                                     value={grade}
                                     onChange={(event) => setGrade(event.target.value)}
-                                    placeholder="학년"
-                                    required
+                                    placeholder={gradeReadOnly ? "학년" : "공통(빈칸)"}
+                                    required={gradeReadOnly}
                                     readOnly={gradeReadOnly}
                                 />
                                 <Input
                                     type="number"
                                     value={classNum}
                                     onChange={(event) => setClassNum(event.target.value)}
-                                    placeholder="반"
-                                    required
+                                    placeholder={classReadOnly ? "반" : "공통(빈칸)"}
+                                    required={classReadOnly}
                                     readOnly={classReadOnly}
                                 />
                             </div>
@@ -288,8 +294,8 @@ export function WordChainSetModal({
 
                     <div className="rounded-xl border-2 border-black p-4 bg-[#e8f8f5] space-y-3">
                         <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
-                            <p className="text-sm font-bold">CSV 업로드 (필수 컬럼: prompt, answer, accepted_answers)</p>
-                            <Button type="button" variant="outline" onClick={downloadWordChainTemplateCsv}>
+                            <p className="text-sm font-bold">CSV 업로드 (예시 양식 참고)</p>
+                            <Button type="button" variant="outline" onClick={downloadWordChainTemplateCsv} className="border-2 border-black bg-white hover:bg-gray-100 shadow-[2px_2px_0px_rgba(0,0,0,1)] font-bold">
                                 예시 CSV 다운로드
                             </Button>
                         </div>
@@ -302,7 +308,7 @@ export function WordChainSetModal({
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <Label className="text-lg font-pixel">문항 목록 ({questions.length})</Label>
-                            <Button type="button" variant="outline" onClick={addQuestion}>
+                            <Button type="button" variant="outline" onClick={addQuestion} className="border-2 border-black bg-white hover:bg-gray-100 shadow-[2px_2px_0px_rgba(0,0,0,1)] font-bold">
                                 <Plus className="w-4 h-4 mr-1" /> 문항 추가
                             </Button>
                         </div>
@@ -328,6 +334,7 @@ export function WordChainSetModal({
                                         variant="ghost"
                                         disabled={questions.length <= 1}
                                         onClick={() => removeQuestion(index)}
+                                        className="hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors"
                                     >
                                         <X className="w-4 h-4" />
                                     </Button>
@@ -350,7 +357,7 @@ export function WordChainSetModal({
                         ))}
                     </div>
 
-                    <Button type="submit" className="w-full h-12 border-2 border-black" disabled={loading}>
+                    <Button type="submit" className="w-full h-14 border-4 border-black bg-blue-500 hover:bg-blue-600 text-white font-pixel text-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-[0px_0px_0px_rgba(0,0,0,1)]" disabled={loading}>
                         {loading ? "저장 중..." : "문제세트 저장"}
                     </Button>
                 </form>

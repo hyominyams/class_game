@@ -4,8 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { QuestionSetManager, QuestionSetModalWrapper } from "@/components/teacher/question-set-manager";
 import { deleteQuestionSet } from "@/app/actions/game-data";
 import { toggleQuestionSetAction } from "@/app/actions/teacher-v2";
+import { AdminQuestionFilters } from "@/components/admin/admin-question-filters";
 
-type SearchParamsInput = Promise<{ gameId?: string }>;
+type SearchParamsInput = Promise<{ gameId?: string; grade?: string; class?: string; }>;
 
 type GameItem = {
     id: string;
@@ -65,6 +66,17 @@ export default async function AdminQuestionsPage({
         query = query.eq("game_id", selectedGameId);
     }
 
+    if (resolvedParams?.grade) {
+        if (resolvedParams.grade === "global") {
+            query = query.is("grade", null);
+        } else {
+            query = query.eq("grade", Number(resolvedParams.grade));
+        }
+    }
+    if (resolvedParams?.class) {
+        query = query.eq("class", Number(resolvedParams.class));
+    }
+
     const { data: setRows } = await query.order("created_at", { ascending: false });
     const questionSets = (setRows as QuestionSetCardItem[] | null) || [];
 
@@ -75,7 +87,10 @@ export default async function AdminQuestionsPage({
                     <h2 className="text-2xl font-bold font-pixel mb-1">문제 세트 관리 (관리자)</h2>
                     <p className="text-sm text-gray-500">전체 학년/반의 문제세트를 생성, 수정, 활성화할 수 있습니다.</p>
                 </div>
-                <QuestionSetManager games={games} initialGameId={selectedGameId} basePath="/admin/questions" />
+                <div className="flex flex-col md:flex-row gap-4">
+                    <AdminQuestionFilters />
+                    <QuestionSetManager games={games} initialGameId={selectedGameId} basePath="/admin/questions" />
+                </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
