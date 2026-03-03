@@ -161,7 +161,6 @@ async function requestJsonFromOpenAI(systemPrompt: string, userPrompt: string): 
         },
         body: JSON.stringify({
             model,
-            temperature: 0.7,
             response_format: { type: "json_object" },
             messages: [
                 { role: "system", content: systemPrompt },

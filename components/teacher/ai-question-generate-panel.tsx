@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,31 +38,30 @@ export type AiGenerationConfig = {
     topic: string;
 };
 
-export function AiQuestionGeneratePanel({
-    gameId,
-    loading,
-    disabled,
-    onGenerate,
-}: {
+type AiQuestionGeneratePanelProps = {
     gameId: string;
     loading: boolean;
     disabled?: boolean;
     onGenerate: (config: AiGenerationConfig) => Promise<void>;
-}) {
-    const maxQuestions = useMemo(() => getQuestionLimitForGame(gameId), [gameId]);
-    const defaultTopic = useMemo(() => getDefaultTopicForGame(gameId), [gameId]);
+};
+
+export function AiQuestionGeneratePanel(props: AiQuestionGeneratePanelProps) {
+    return <AiQuestionGeneratePanelBody key={props.gameId} {...props} />;
+}
+
+function AiQuestionGeneratePanelBody({
+    gameId,
+    loading,
+    disabled,
+    onGenerate,
+}: AiQuestionGeneratePanelProps) {
+    const maxQuestions = getQuestionLimitForGame(gameId);
+    const defaultTopic = getDefaultTopicForGame(gameId);
 
     const [counts, setCounts] = useState<DifficultyCounts>(() => getDefaultCounts(maxQuestions));
     const [topicMode, setTopicMode] = useState<AiTopicMode>("default");
     const [generalTopicPreset, setGeneralTopicPreset] = useState(GENERAL_TOPIC_PRESETS[0]);
     const [customTopic, setCustomTopic] = useState("");
-
-    useEffect(() => {
-        setCounts(getDefaultCounts(maxQuestions));
-        setTopicMode("default");
-        setGeneralTopicPreset(GENERAL_TOPIC_PRESETS[0]);
-        setCustomTopic("");
-    }, [gameId, maxQuestions]);
 
     const totalQuestions = counts.high + counts.medium + counts.low;
     const resolvedGeneralTopic = customTopic.trim() || generalTopicPreset;

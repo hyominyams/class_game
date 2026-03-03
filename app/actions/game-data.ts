@@ -321,7 +321,12 @@ export async function updateQuestionSet(
         return { success: false, error: "Unauthorized: You can only edit your own question sets" };
     }
 
-    const scopeError = ensureTeacherScope(context, grade, classNum);
+    // Editing keeps the original scope fixed; scope changes are only allowed on create.
+    if (grade !== currentSet.grade || classNum !== currentSet.class) {
+        return { success: false, error: "Question set scope (grade/class) cannot be changed while editing." };
+    }
+
+    const scopeError = ensureTeacherScope(context, currentSet.grade, currentSet.class);
     if (scopeError) {
         return { success: false, error: scopeError };
     }
@@ -345,8 +350,6 @@ export async function updateQuestionSet(
         .from("question_sets")
         .update({
             title,
-            grade,
-            class: classNum,
             question_mode: questionMode,
         })
         .eq("id", setId);

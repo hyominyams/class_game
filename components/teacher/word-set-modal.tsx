@@ -296,8 +296,9 @@ export function WordSetModal({
         }
     };
 
-    const gradeReadOnly = typeof teacherProfile?.grade === "number";
-    const classReadOnly = typeof teacherProfile?.class === "number";
+    const isEditMode = Boolean(setId);
+    const gradeReadOnly = isEditMode || typeof teacherProfile?.grade === "number";
+    const classReadOnly = isEditMode || typeof teacherProfile?.class === "number";
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
