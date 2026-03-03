@@ -284,7 +284,7 @@ export function HistorySetModal({
                         answer: shortAnswer,
                     };
                 })
-                .filter((row): row is QuestionState => Boolean(row));
+                .filter((row): row is NonNullable<typeof row> => row !== null);
 
             if (nextQuestions.length === 0) {
                 alert("AI가 유효한 문항을 생성하지 못했습니다. 다시 시도해 주세요.");
