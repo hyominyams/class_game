@@ -22,7 +22,7 @@ export default async function StudentMyPage() {
         <div className="space-y-6">
             <header>
                 <h1 className="font-pixel text-3xl font-bold mb-2">마이페이지</h1>
-                <p className="text-gray-600 font-bold">닉네임과 비밀번호를 변경할 수 있습니다.</p>
+                <p className="font-pixel text-sm text-gray-600">닉네임과 비밀번호를 변경할 수 있습니다.</p>
             </header>
 
             <StudentMyPageClient

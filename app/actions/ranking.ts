@@ -41,9 +41,18 @@ async function getStudentClassContext(): Promise<StudentClassContext | null> {
     };
 }
 
-function getNickname(nickname: string | null) {
+function getRankingNickname(nickname: string | null) {
     const trimmed = (nickname || '').trim();
-    return trimmed || '익명';
+    if (!trimmed) {
+        return '-';
+    }
+
+    const normalized = trimmed.replace(/\s+/g, '').toLowerCase();
+    if (normalized === '익명' || normalized === 'unknown') {
+        return '-';
+    }
+
+    return trimmed;
 }
 
 function sortAndRank(items: RankUser[]) {
@@ -120,7 +129,7 @@ export async function getMonthlyRankingAction() {
     return sortAndRank(
         students.map((s) => ({
             rank: 0,
-            name: getNickname(s.nickname),
+            name: getRankingNickname(s.nickname),
             points: gainsMap[s.id] || 0,
             avatar: badgeMap[s.id] || '👤',
             comparison: 0,
@@ -156,7 +165,7 @@ export async function getGameRankingAction(gameId: string) {
     return sortAndRank(
         students.map((s) => ({
             rank: 0,
-            name: getNickname(s.nickname),
+            name: getRankingNickname(s.nickname),
             points: maxScoresMap[s.id] || 0,
             avatar: badgeMap[s.id] || '🎮',
             comparison: 0,
@@ -211,7 +220,7 @@ export async function getWeeklyRankingAction() {
     return sortAndRank(
         students.map((s) => ({
             rank: 0,
-            name: getNickname(s.nickname),
+            name: getRankingNickname(s.nickname),
             points: gainsMap[s.id] || 0,
             avatar: badgeMap[s.id] || '🌱',
             comparison: 0,
@@ -238,17 +247,12 @@ export async function getTournamentRankingAction() {
     const tournamentId = activeTournaments[0].id;
     const rankings = await getTournamentRankings(tournamentId);
 
-    return rankings.map((r, index) => {
-        const nickname = (r.nickname || '').trim();
-        const name = !nickname || nickname.toLowerCase() === 'unknown' ? '익명' : nickname;
-
-        return {
-            rank: r.rank,
-            name,
-            points: r.score || 0,
-            avatar: '🏆',
-            comparison: 0,
-            tier: index === 0 ? 'Diamond' : index < 3 ? 'Platinum' : 'Gold',
-        };
-    });
+    return rankings.map((r, index) => ({
+        rank: r.rank,
+        name: getRankingNickname(r.nickname),
+        points: r.score || 0,
+        avatar: '🏆',
+        comparison: 0,
+        tier: index === 0 ? 'Diamond' : index < 3 ? 'Platinum' : 'Gold',
+    }));
 }

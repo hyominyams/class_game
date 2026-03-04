@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { PixelCard } from "@/components/ui/pixel-card";
-import { Trophy, Medal, Crown, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     getWeeklyRankingAction,
@@ -12,15 +11,22 @@ import {
     getAvailableGamesAction,
     RankUser
 } from "@/app/actions/ranking";
-import { useRouter } from "next/navigation";
+
+type RankingTab = "WEEKLY" | "MONTHLY" | "TOURNAMENT" | "GAME_SCORE";
+
+const RANKING_TABS: Array<{ id: RankingTab; label: string; color: string }> = [
+    { id: "WEEKLY", label: "주간(코인)", color: "bg-[#ff2e63]" },
+    { id: "MONTHLY", label: "월간(코인)", color: "bg-[#00b894]" },
+    { id: "GAME_SCORE", label: "게임별(점수)", color: "bg-amber-400" },
+    { id: "TOURNAMENT", label: "🏆 대회", color: "bg-[#6c5ce7]" },
+];
 
 export default function RankingPage() {
-    const [activeTab, setActiveTab] = useState<"WEEKLY" | "MONTHLY" | "TOURNAMENT" | "GAME_SCORE">("WEEKLY");
+    const [activeTab, setActiveTab] = useState<RankingTab>("WEEKLY");
     const [rankingData, setRankingData] = useState<RankUser[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [availableGames, setAvailableGames] = useState<{ id: string, title: string }[]>([]);
     const [selectedGameId, setSelectedGameId] = useState<string>("");
-    const router = useRouter(); // Use if needed for navigation back, etc.
 
     useEffect(() => {
         const fetchGames = async () => {
@@ -77,15 +83,10 @@ export default function RankingPage() {
 
             {/* Tabs Container */}
             <div className="flex items-end px-2 -mb-[4px] relative z-10 space-x-1 overflow-x-auto scrollbar-hide">
-                {[
-                    { id: "WEEKLY", label: "주간(코인)", color: "bg-[#ff2e63]" },
-                    { id: "MONTHLY", label: "월간(코인)", color: "bg-[#00b894]" },
-                    { id: "GAME_SCORE", label: "게임별(점수)", color: "bg-amber-400" },
-                    { id: "TOURNAMENT", label: "🏆 대회", color: "bg-[#6c5ce7]" },
-                ].map((tab) => (
+                {RANKING_TABS.map((tab) => (
                     <button
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
+                        onClick={() => setActiveTab(tab.id)}
                         className={cn(
                             "px-4 md:px-6 py-2 font-pixel text-xs md:text-sm border-t-4 border-x-4 border-black rounded-t-lg transition-all flex items-center justify-center whitespace-nowrap",
                             activeTab === tab.id
@@ -142,7 +143,7 @@ export default function RankingPage() {
                         <div className="grid grid-cols-[60px_70px_1fr_140px] gap-4 px-4 pb-3 text-sm font-pixel font-bold text-gray-400 border-b-4 border-black/5">
                             <div className="text-center">순위</div>
                             <div className="text-center">{activeTab === "TOURNAMENT" ? "티어" : "아바타"}</div>
-                            <div>이름</div>
+                            <div>닉네임</div>
                             <div className="text-right">
                                 {activeTab === "GAME_SCORE" ? "최고 점수" : activeTab === "TOURNAMENT" ? "대회 기록" : "획득 코인"}
                             </div>
