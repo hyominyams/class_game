@@ -7,4 +7,5 @@ export {
     createStudentAction,
     createBulkStudentsAction,
     giveCoinToStudentAction,
+    deleteStudentAction,
 } from "./teacher-v2";

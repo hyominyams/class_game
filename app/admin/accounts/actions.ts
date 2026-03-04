@@ -38,20 +38,53 @@ export async function deleteAccount(id: string) {
 
     const supabaseAdmin = createAdminClient();
 
-    // supabaseAdmin.auth.admin.deleteUser deletes the auth user.
-    // The profile will ideally cascade or can be manually deleted.
-    const { error: profileError } = await supabaseAdmin.from('profiles').delete().eq('id', id);
+    // Break profile FK dependencies first so auth/profile deletion does not fail.
+    const { error: unlinkQuestionSetsError } = await supabaseAdmin
+        .from('question_sets')
+        .update({ created_by: null })
+        .eq('created_by', id);
+    if (unlinkQuestionSetsError) {
+        console.error('Error unlinking question sets from account:', unlinkQuestionSetsError);
+    }
+
+    const { error: unlinkTournamentsError } = await supabaseAdmin
+        .from('tournaments')
+        .update({ created_by: null })
+        .eq('created_by', id);
+    if (unlinkTournamentsError) {
+        console.error('Error unlinking tournaments from account:', unlinkTournamentsError);
+    }
+
+    const { error: deleteItemsError } = await supabaseAdmin
+        .from('student_items')
+        .delete()
+        .eq('user_id', id);
+    if (deleteItemsError) {
+        console.error('Error deleting student items for account:', deleteItemsError);
+    }
+
+    // Try hard-delete first; if blocked by FK constraints, fall back to soft-delete.
+    const { error: hardDeleteError } = await supabaseAdmin.auth.admin.deleteUser(id);
+    if (hardDeleteError) {
+        const isNotFound = hardDeleteError.message.toLowerCase().includes('not found');
+        if (!isNotFound) {
+            const { error: softDeleteError } = await supabaseAdmin.auth.admin.deleteUser(id, true);
+            if (softDeleteError && !softDeleteError.message.toLowerCase().includes('not found')) {
+                console.error('Error deleting auth user:', hardDeleteError, softDeleteError);
+                return { success: false, error: 'Failed to delete auth account.' };
+            }
+        }
+    }
+
+    // Clean up orphaned profile row when auth cascade is not available.
+    const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', id);
     if (profileError) {
         console.error('Error deleting profile:', profileError);
-        return { success: false, error: '프로필 삭제에 실패했습니다.' };
+        return { success: false, error: 'Failed to delete profile record.' };
     }
-
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-    if (authError) {
-        console.error('Error deleting auth user:', authError);
-        return { success: false, error: '인증 계정 삭제에 실패했습니다.' };
-    }
-
 
     revalidatePath('/admin/accounts');
     return { success: true };
@@ -83,7 +116,7 @@ export async function bulkCreateAccounts(users: BulkUserRow[]) {
     const supabaseAdmin = createAdminClient();
     const results = {
         successCount: 0,
-        failures: [] as { loginId: string; reason: string }[]
+        failures: [] as { loginId: string; reason: string }[],
     };
 
     for (const user of users) {
@@ -98,8 +131,8 @@ export async function bulkCreateAccounts(users: BulkUserRow[]) {
                     grade: user.grade,
                     class: user.classNum,
                     role: user.role,
-                    username: user.loginId
-                }
+                    username: user.loginId,
+                },
             });
 
             if (error) {
@@ -117,20 +150,21 @@ export async function bulkCreateAccounts(users: BulkUserRow[]) {
                         grade: user.grade,
                         class: user.classNum,
                         role: user.role,
-                        coin_balance: 0
+                        coin_balance: 0,
                     });
 
                 if (profileError) {
                     await supabaseAdmin.auth.admin.deleteUser(data.user.id); // Rollback
-                    results.failures.push({ loginId: user.loginId, reason: '프로필 생성 실패 (롤백됨)' });
+                    results.failures.push({ loginId: user.loginId, reason: 'Failed to create profile (rolled back auth).' });
                 } else {
                     results.successCount++;
                 }
             } else {
-                results.failures.push({ loginId: user.loginId, reason: '알 수 없는 에러' });
+                results.failures.push({ loginId: user.loginId, reason: 'Unknown auth create error' });
             }
-        } catch (err: any) {
-            results.failures.push({ loginId: user.loginId, reason: err.message || '예상치 못한 에러' });
+        } catch (err: unknown) {
+            const reason = err instanceof Error ? err.message : 'Unexpected error';
+            results.failures.push({ loginId: user.loginId, reason });
         }
     }
 

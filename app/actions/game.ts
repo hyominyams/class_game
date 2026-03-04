@@ -19,6 +19,13 @@ type SaveResultMetadata = {
     minimumReward?: number;
 };
 
+const GAME_CLEAR_MINIMUM_REWARD: Partial<Record<string, number>> = {
+    'history-quiz': 12,
+    'word-chain': 12,
+    'pixel-runner': 12,
+    'word-runner': 12,
+};
+
 export async function getDailyCoinProgress() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -81,6 +88,13 @@ function applyGameSpecificMinimumReward(
     metadata: SaveResultMetadata | undefined,
     baseReward: number
 ) {
+    let adjustedReward = baseReward;
+
+    if (metadata?.didClear) {
+        const clearMinimum = GAME_CLEAR_MINIMUM_REWARD[gameId] || 0;
+        adjustedReward = Math.max(adjustedReward, clearMinimum);
+    }
+
     // Word Defense: even on failure, grant a tiny consolation reward for meaningful participation.
     if (gameId === 'word-runner' && metadata?.didClear === false) {
         const participatedEnough =
@@ -91,11 +105,11 @@ function applyGameSpecificMinimumReward(
 
         if (participatedEnough) {
             const minimumReward = Math.max(0, Math.min(5, metadata.minimumReward || 3));
-            return Math.max(baseReward, minimumReward);
+            return Math.max(adjustedReward, minimumReward);
         }
     }
 
-    return baseReward;
+    return adjustedReward;
 }
 
 function resolveActualReward(todayTotal: number, potentialReward: number, dailyLimit: number) {
@@ -286,65 +300,113 @@ export async function getStudentDashboardData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
+    type StudentProgressMetricsRow = {
+        total_score: number | null;
+        total_games_played: number | null;
+        total_coins_earned: number | null;
+        attendance_count: number | null;
+    };
+
+    type StudentRankRow = {
+        rank: number | null;
+    };
+
     // Parallel fetch for independent data
     const [
         { data: profile },
         { data: activities },
-        { data: scoreData },
-        { data: coinData },
-        { count: attendanceCount },
+        { data: metricsData, error: metricsError },
         { data: titleData }
     ] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('game_logs').select('*, coin_transactions!coin_transactions_reference_id_fkey(amount)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(3),
-        supabase.from('game_logs').select('score').eq('user_id', user.id),
-        supabase.from('coin_transactions').select('amount').eq('user_id', user.id).gt('amount', 0),
-        supabase.from('coin_transactions').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('reason', 'ATTENDANCE'),
+        (supabase as any).rpc('get_student_progress_metrics', { p_user_id: user.id }).maybeSingle(),
         adminClient.from('student_items').select('item_name').eq('user_id', user.id).eq('item_id', 'EQUIPPED_TITLE_SLOT').single()
     ])
 
-    // Fetch rank (depends on profile)
-    let rankCount = 0;
-    if (profile) {
-        const { data: classmates } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('grade', profile.grade || 0)
-            .eq('class', profile.class || 0)
-            .eq('role', 'student');
+    if (metricsError) {
+        console.error('Failed to fetch student progress metrics:', metricsError);
+    }
 
-        const classmateIds = (classmates || []).map((p) => p.id);
-        if (classmateIds.length > 0) {
-            const { data: classTransactions } = await adminClient
-                .from('coin_transactions')
-                .select('user_id, amount, reason')
-                .in('user_id', classmateIds)
-                .gt('amount', 0);
+    let rank = 1;
+    if (profile && profile.grade !== null && profile.class !== null) {
+        const { data: rankData, error: rankError } = await (supabase as any)
+            .rpc('get_student_current_rank', {
+                p_user_id: user.id,
+                p_grade: profile.grade,
+                p_class: profile.class,
+            })
+            .maybeSingle();
 
-            const pointsMap: Record<string, number> = {};
-            classTransactions
-                ?.filter((tx) => isRankingEligibleReason(tx.reason))
-                .forEach((tx) => {
-                    pointsMap[tx.user_id] = (pointsMap[tx.user_id] || 0) + (tx.amount || 0);
-                });
+        if (rankError) {
+            console.error('Failed to fetch student rank:', rankError);
+        } else if ((rankData as StudentRankRow | null)?.rank && (rankData as StudentRankRow).rank! > 0) {
+            rank = (rankData as StudentRankRow).rank as number;
+        }
 
-            const myPoints = pointsMap[user.id] || 0;
-            rankCount = classmateIds.filter((id) => (pointsMap[id] || 0) > myPoints).length;
+        if (rankError || rank <= 0) {
+            const { data: classmates } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('grade', profile.grade)
+                .eq('class', profile.class)
+                .eq('role', 'student');
+
+            const classmateIds = (classmates || []).map((p) => p.id);
+            if (classmateIds.length > 0) {
+                const { data: classTransactions } = await adminClient
+                    .from('coin_transactions')
+                    .select('user_id, amount, reason')
+                    .in('user_id', classmateIds)
+                    .gt('amount', 0);
+
+                const pointsMap: Record<string, number> = {};
+                classTransactions
+                    ?.filter((tx) => isRankingEligibleReason(tx.reason))
+                    .forEach((tx) => {
+                        pointsMap[tx.user_id] = (pointsMap[tx.user_id] || 0) + (tx.amount || 0);
+                    });
+
+                const myPoints = pointsMap[user.id] || 0;
+                const rankCount = classmateIds.filter((id) => (pointsMap[id] || 0) > myPoints).length;
+                rank = rankCount + 1;
+            } else {
+                rank = 1;
+            }
         }
     }
 
-    const totalScore = scoreData?.reduce((acc, log) => acc + (log.score || 0), 0) || 0
-    const totalGamesPlayed = scoreData?.length || 0
-    const totalCoinsEarned = coinData?.reduce((acc, tx) => acc + (tx.amount || 0), 0) || 0
+    const metrics = (metricsData as StudentProgressMetricsRow | null) || null;
+    let totalScore = Number(metrics?.total_score || 0)
+    let totalGamesPlayed = Number(metrics?.total_games_played || 0)
+    let totalCoinsEarned = Number(metrics?.total_coins_earned || 0)
+    let attendanceCount = Number(metrics?.attendance_count || 0)
+
+    if (metricsError || !metrics) {
+        const [
+            { data: scoreData },
+            { data: coinData },
+            { count: attendanceCountFallback }
+        ] = await Promise.all([
+            supabase.from('game_logs').select('score').eq('user_id', user.id),
+            supabase.from('coin_transactions').select('amount').eq('user_id', user.id).gt('amount', 0),
+            supabase.from('coin_transactions').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('reason', 'ATTENDANCE'),
+        ]);
+
+        totalScore = scoreData?.reduce((acc, log) => acc + (log.score || 0), 0) || 0
+        totalGamesPlayed = scoreData?.length || 0
+        totalCoinsEarned = coinData?.reduce((acc, tx) => acc + (tx.amount || 0), 0) || 0
+        attendanceCount = attendanceCountFallback || 0
+    }
 
     return {
         profile,
         activities: activities || [],
-        rank: rankCount + 1,
+        rank,
         totalScore,
         totalCoinsEarned,
         totalGamesPlayed,
-        attendanceCount: attendanceCount || 0,
+        attendanceCount,
         currentEquippedTitleId: titleData?.item_name || null
     }
 }

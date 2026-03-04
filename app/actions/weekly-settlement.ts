@@ -87,16 +87,25 @@ export async function checkAndSettleWeeklyRewards(): Promise<WeeklySettlementRes
         .lt('created_at', lastWeekEnd.toISOString())
         .gt('amount', 0);
 
-    // Aggregate scores
+    // Aggregate scores only for students who actually participated in ranking-eligible activities.
     const scoresMap: Record<string, number> = {};
+    const participantIds = new Set<string>();
     transactions
         ?.filter(tx => isRankingEligibleReason(tx.reason))
         .forEach(tx => {
-        scoresMap[tx.user_id] = (scoresMap[tx.user_id] || 0) + tx.amount;
-    });
+            scoresMap[tx.user_id] = (scoresMap[tx.user_id] || 0) + tx.amount;
+            if ((scoresMap[tx.user_id] || 0) > 0) {
+                participantIds.add(tx.user_id);
+            }
+        });
 
-    // Sort and find rank
-    const rankedUsers = studentIds
+    // No participation this week -> no settlement.
+    if (!participantIds.has(actor.userId)) {
+        return { settled: false };
+    }
+
+    // Sort and find rank among participating students only.
+    const rankedUsers = Array.from(participantIds)
         .map(id => ({ id, points: scoresMap[id] || 0 }))
         .sort((a, b) => b.points - a.points); // Descending
 

@@ -154,6 +154,7 @@ export function HistoryQuizGame({ runtimeData }: { runtimeData: RuntimeQuestions
                 correctCount,
                 totalQuestions: questions.length,
                 isPerfect: isClear && hearts > 0 && correctCount === questions.length,
+                didClear: isClear,
             });
 
             if (saveResult.success) {

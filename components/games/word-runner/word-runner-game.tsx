@@ -444,7 +444,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
 
         const loadSpriteAnimations = async () => {
             const animationMap: Partial<Record<AnimatedEnemyAssetKey, EnemySpriteAnimation>> = {};
-            const nextAssets = { ...assetsRef.current };
+            const animatedAssetImages: Partial<Record<AnimatedEnemyAssetKey, HTMLImageElement>> = {};
 
             await Promise.all(
                 ANIMATED_ENEMY_ASSET_KEYS.map(async (key) => {
@@ -452,7 +452,7 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
                         const sheetImage = await loadImageAsset(ENEMY_SPRITE_PATHS[key].image);
                         if (sheetImage) {
                             // Reuse the loaded sprite sheet as static fallback to avoid duplicate image downloads.
-                            nextAssets[key] = sheetImage;
+                            animatedAssetImages[key] = sheetImage;
                         }
 
                         if (!sheetImage) return;
@@ -487,7 +487,10 @@ export function WordDefenseGame({ runtimeData }: { runtimeData: RuntimeQuestions
             );
 
             if (cancelled) return;
-            assetsRef.current = nextAssets;
+            assetsRef.current = {
+                ...assetsRef.current,
+                ...animatedAssetImages,
+            };
             enemySpriteAnimationsRef.current = animationMap;
         };
 

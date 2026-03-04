@@ -203,6 +203,7 @@ export function WordChainGame({ runtimeData }: { runtimeData: RuntimeQuestionsDa
             correctCount,
             totalQuestions: questions.length,
             isPerfect: isClear && correctCount === questions.length,
+            didClear: isClear,
         });
 
         if (saveResult.success) {

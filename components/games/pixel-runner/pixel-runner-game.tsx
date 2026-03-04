@@ -43,7 +43,7 @@ export default function PixelRunnerGame() {
         const ctx = canvas.getContext('2d')!;
 
         // ===================================================
-        // 🎵 BGM 및 사운드 시스템 (Web Audio API)
+        // BGM and sound system (Web Audio API)
         // ===================================================
         const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         const audioCtx = new AudioContext();
@@ -258,13 +258,30 @@ export default function PixelRunnerGame() {
 
 
         const QUIZ_DATA: { q: string, o: string[], a: number }[] = [];
+        type StartButtonState = 'checking' | 'ready' | 'empty';
+        let startButtonState: StartButtonState = 'checking';
         type QuizQuestionSource = {
             question_text?: unknown;
             options?: unknown;
             correct_answer?: unknown;
         };
 
+        const syncStartButtonState = (state: StartButtonState) => {
+            startButtonState = state;
+            const startButton = document.getElementById('startBtn') as HTMLButtonElement | null;
+            if (!startButton) return;
+
+            startButton.disabled = state !== 'ready';
+            startButton.textContent = state === 'ready'
+                ? 'START GAME'
+                : state === 'checking'
+                    ? 'CHECKING SET...'
+                    : 'NO ACTIVE SET';
+        };
+
         async function loadActiveQuestions() {
+            syncStartButtonState('checking');
+            QUIZ_DATA.splice(0, QUIZ_DATA.length);
             try {
                 const mode = searchParams.get('mode');
                 const tournamentId = searchParams.get('tournamentId');
@@ -318,14 +335,11 @@ export default function PixelRunnerGame() {
                     }
                 }
 
-                const startButton = document.getElementById('startBtn') as HTMLButtonElement | null;
-                if (startButton) {
-                    const canStart = QUIZ_DATA.length > 0;
-                    startButton.disabled = !canStart;
-                    startButton.textContent = canStart ? 'START GAME' : 'NO ACTIVE SET';
-                }
+                const canStart = QUIZ_DATA.length > 0;
+                syncStartButtonState(canStart ? 'ready' : 'empty');
             } catch (e) {
                 console.warn("Failed to load questions from DB", e);
+                syncStartButtonState(QUIZ_DATA.length > 0 ? 'ready' : 'empty');
             }
         }
         loadActiveQuestions();
@@ -711,7 +725,7 @@ export default function PixelRunnerGame() {
 
         function updateLives() {
             let hearts = "";
-            for (let i = 0; i < lives; i++) hearts += "❤️";
+            for (let i = 0; i < lives; i++) hearts += "\u2764\uFE0F";
             const livesDisplay = document.getElementById('livesDisplay');
             if (livesDisplay) livesDisplay.innerText = hearts;
         }
@@ -857,7 +871,8 @@ export default function PixelRunnerGame() {
                     {
                         correctCount: correctQuizzes,
                         totalQuestions: MAX_QUIZ_COUNT,
-                        isPerfect: isClear && lives === 5
+                        isPerfect: isClear && lives === 5,
+                        didClear: isClear,
                     }
                 );
 
@@ -1056,11 +1071,8 @@ export default function PixelRunnerGame() {
                 player.draw(ctx);
             }
         }
-
-        const startBtn = document.getElementById('startBtn')!;
         const handleStartClick = () => {
-            if (QUIZ_DATA.length === 0) {
-                alert("활성화된 문제 세트가 없습니다. 선생님이 문제 세트를 적용한 뒤 다시 시도해 주세요.");
+            if (startButtonState !== 'ready' || QUIZ_DATA.length === 0) {
                 return;
             }
             if (audioCtx.state === 'suspended') {
@@ -1436,7 +1448,7 @@ export default function PixelRunnerGame() {
 
                 <div id="uiLayer">
                     <span id="scoreDisplay" className="hud-text">SCORE: 0</span>
-                    <span id="livesDisplay" className="hud-text">❤️❤️❤️❤️❤️</span>
+                    <span id="livesDisplay" className="hud-text">{"\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F"}</span>
                 </div>
                 <div id="quizProgress">QUIZ: 0/10</div>
 

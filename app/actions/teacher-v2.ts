@@ -141,7 +141,7 @@ export async function toggleQuestionSetAction(setId: string, gameId: string, act
         if (deactivateError) return { success: false, error: deactivateError.message };
     }
 
-    let activateQuery = updateClient
+    const activateQuery = updateClient
         .from("question_sets")
         .update({ is_active: active })
         .eq("id", setId);
@@ -384,5 +384,70 @@ export async function giveCoinToStudentAction(studentId: string, amount: number,
 
     revalidatePath('/teacher/accounts');
     revalidatePath('/student/dashboard');
+    return { success: true };
+}
+
+/**
+ * Delete a student account.
+ * Teachers can only delete student accounts in their own class scope.
+ */
+export async function deleteStudentAction(studentId: string) {
+    const actorResult = await requireActor(["teacher", "admin"]);
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error, status: actorResult.status };
+    }
+
+    const { actor } = actorResult;
+    const supabaseAdmin = createAdminClient();
+
+    const { data: targetStudent, error: targetStudentError } = await supabaseAdmin
+        .from("profiles")
+        .select("role, grade, class")
+        .eq("id", studentId)
+        .single();
+
+    if (targetStudentError || !targetStudent) {
+        return { success: false, error: "Student not found" };
+    }
+
+    if (!canManageStudent(actor, {
+        role: targetStudent.role,
+        grade: targetStudent.grade,
+        classNum: targetStudent.class,
+    })) {
+        return { success: false, error: "Forbidden: You can only delete students in your own class." };
+    }
+
+    const { error: deleteItemsError } = await supabaseAdmin
+        .from("student_items")
+        .delete()
+        .eq("user_id", studentId);
+    if (deleteItemsError) {
+        console.error("Error deleting student items before student delete:", deleteItemsError);
+    }
+
+    const { error: hardDeleteError } = await supabaseAdmin.auth.admin.deleteUser(studentId);
+    if (hardDeleteError) {
+        const isNotFound = hardDeleteError.message.toLowerCase().includes("not found");
+        if (!isNotFound) {
+            const { error: softDeleteError } = await supabaseAdmin.auth.admin.deleteUser(studentId, true);
+            if (softDeleteError && !softDeleteError.message.toLowerCase().includes("not found")) {
+                console.error("Error deleting student auth user:", hardDeleteError, softDeleteError);
+                return { success: false, error: "Failed to delete auth account." };
+            }
+        }
+    }
+
+    const { error: profileDeleteError } = await supabaseAdmin
+        .from("profiles")
+        .delete()
+        .eq("id", studentId);
+    if (profileDeleteError) {
+        console.error("Error deleting student profile:", profileDeleteError);
+        return { success: false, error: "Failed to delete student profile." };
+    }
+
+    revalidatePath("/teacher/accounts");
+    revalidatePath("/teacher/dashboard");
     return { success: true };
 }
