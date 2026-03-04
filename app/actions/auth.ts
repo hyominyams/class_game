@@ -1,7 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
+import { requireActor } from './security/guards'
 
 export async function loginAction(formData: { id: string; password: string }) {
     const supabase = await createClient()
@@ -69,9 +72,47 @@ export async function changePasswordAction(password: string) {
     })
 
     if (error) {
-        console.error("Password update error:", error)
+        console.error('Password update error:', error)
         return { success: false, error: '비밀번호 변경에 실패했습니다. ' + error.message }
     }
 
     return { success: true, message: '비밀번호가 성공적으로 변경되었습니다.' }
+}
+
+export async function updateStudentNicknameAction(nickname: string) {
+    const actorResult = await requireActor(['student'])
+    if (!actorResult.ok) {
+        return { success: false, error: actorResult.error }
+    }
+
+    const trimmed = nickname.trim()
+    if (trimmed.length < 2) {
+        return { success: false, error: '닉네임은 최소 2글자 이상이어야 합니다.' }
+    }
+
+    if (trimmed.length > 20) {
+        return { success: false, error: '닉네임은 20글자 이하로 입력해 주세요.' }
+    }
+
+    const normalized = trimmed.replace(/\s+/g, '').toLowerCase()
+    if (normalized === '익명') {
+        return { success: false, error: '닉네임을 익명으로 설정할 수 없습니다.' }
+    }
+
+    const adminClient = createAdminClient()
+    const { error } = await adminClient
+        .from('profiles')
+        .update({ nickname: trimmed })
+        .eq('id', actorResult.actor.userId)
+
+    if (error) {
+        return { success: false, error: '닉네임 변경에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
+    }
+
+    revalidatePath('/student/dashboard')
+    revalidatePath('/student/stats')
+    revalidatePath('/student/ranking')
+    revalidatePath('/student/my')
+
+    return { success: true, message: '닉네임이 변경되었습니다.' }
 }

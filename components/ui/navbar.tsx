@@ -68,6 +68,7 @@ export function NavBar() {
         { label: '학습기록', href: '/student/stats' },
         { label: '랭킹', href: '/student/ranking' },
         { label: '상점', href: '/student/store' },
+        { label: '마이페이지', href: '/student/my' },
     ];
 
     const getDashboardLink = () => {
@@ -251,6 +252,11 @@ export function NavBar() {
                                         대시보드
                                     </Link>
                                 </DropdownMenuItem>
+                                {isStudent && (
+                                    <DropdownMenuItem asChild className="cursor-pointer focus:bg-[#ff2e63]/10">
+                                        <Link href="/student/my">마이페이지</Link>
+                                    </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                     className="cursor-pointer focus:bg-[#ff2e63]/10"
                                     onClick={(e) => {
