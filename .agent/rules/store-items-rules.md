@@ -1,3 +1,7 @@
+---
+trigger: model_decision
+---
+
 # Store Items Rules
 
 ## 디자인 의도 (Design Intent)

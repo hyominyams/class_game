@@ -6,6 +6,11 @@ type ActiveTournament = {
     game_id: string;
 };
 
+type TournamentParticipation = {
+    tournament_id: string;
+    attempts_used: number | null;
+};
+
 export default async function GameListPage() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -55,21 +60,28 @@ export default async function GameListPage() {
             }
             activeTournaments = Array.from(tournamentsByGame.values());
 
-            const participationList = await Promise.all(activeTournaments.map(async (t) => {
-                const { data: p } = await supabase
+            const participationByTournamentId = new Map<string, number>();
+            const activeTournamentIds = activeTournaments.map((t) => t.id);
+            if (activeTournamentIds.length > 0) {
+                const { data: participations } = await supabase
                     .from("tournament_participants")
-                    .select("attempts_used")
-                    .eq("tournament_id", t.id)
+                    .select("tournament_id, attempts_used")
                     .eq("user_id", user.id)
-                    .maybeSingle();
+                    .in("tournament_id", activeTournamentIds);
 
-                const attemptsUsed = p?.attempts_used ?? 0;
+                (participations as TournamentParticipation[] | null)?.forEach((participation) => {
+                    participationByTournamentId.set(participation.tournament_id, participation.attempts_used ?? 0);
+                });
+            }
+
+            const participationList = activeTournaments.map((t) => {
+                const attemptsUsed = participationByTournamentId.get(t.id) ?? 0;
                 return {
                     gameId: t.game_id,
                     allowed: attemptsUsed < 3,
                     attemptsLeft: Math.max(0, 3 - attemptsUsed),
                 };
-            }));
+            });
 
             for (const participation of participationList) {
                 participationMap[participation.gameId] = {

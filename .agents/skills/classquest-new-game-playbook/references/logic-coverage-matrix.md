@@ -9,6 +9,7 @@
 - `ranking`
 - `tournament`
 - `csv(front+back)`
+- `ai-question-gen`
 
 ## 2. 도메인별 필수 점검
 
@@ -72,6 +73,19 @@
   - 필수 컬럼 누락/형식 오류에서 명확한 에러를 반환하는가
   - CSV 파싱 결과와 DB 저장 매핑이 1:1로 일치하는가
 
+### G. `ai-question-gen`
+- 필수 파일:
+  - `app/actions/question-ai.ts`
+  - `lib/questions/ai-config.ts`
+  - `components/teacher/ai-question-generate-panel.tsx`
+  - `components/teacher/<new-game>-set-modal.tsx`
+- 체크:
+  - AI 호출은 서버 액션에서만 수행되는가 (`OPENAI_API_KEY`, `OPENAI_MODEL`)
+  - 권한 제한(`teacher`, `admin`)이 적용되는가
+  - 난이도별 문항 수/중복/스키마 검증이 서버에서 강제되는가
+  - AI 생성 결과가 기존 저장 경로(`createQuestionSet`/`updateQuestionSet`)를 통해 저장되는가
+  - CSV/수동 입력과 충돌 없이 함께 동작하는가
+
 ## 3. 증적(필수 출력 형식)
 최종 보고 시 아래 표를 반드시 채운다.
 
@@ -83,6 +97,7 @@
 | ranking |  |  |  |
 | tournament |  |  |  |
 | csv(front+back) |  |  |  |
+| ai-question-gen |  |  |  |
 
 ## 4. 권장 SQL 스모크
 ```sql

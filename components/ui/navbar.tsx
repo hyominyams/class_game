@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, Lock, LogOut, TrendingDown, TrendingUp, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChangePasswordModal } from '@/components/auth/change-password-modal';
@@ -26,6 +26,8 @@ type StudentNotification = {
     createdAt: string;
     href: string;
 };
+
+const STUDENT_HEADER_CACHE_TTL_MS = 30_000;
 
 function formatRelativeTime(iso: string) {
     const eventTime = new Date(iso).getTime();
@@ -78,17 +80,23 @@ export function NavBar() {
     const [notifications, setNotifications] = useState<StudentNotification[]>([]);
     const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+    const lastFetchedAtRef = useRef(0);
 
     useEffect(() => {
         let cancelled = false;
 
-        const fetchStudentHeaderData = async () => {
+        const fetchStudentHeaderData = async (force = false) => {
             if (!isLogin || !isStudent) {
                 if (!cancelled) {
                     setCoins(null);
                     setNotifications([]);
                     setIsLoadingNotifications(false);
                 }
+                lastFetchedAtRef.current = 0;
+                return;
+            }
+
+            if (!force && Date.now() - lastFetchedAtRef.current < STUDENT_HEADER_CACHE_TTL_MS) {
                 return;
             }
 
@@ -102,6 +110,7 @@ export function NavBar() {
                 if (cancelled) return;
                 setCoins(balance);
                 setNotifications(notificationResult.notifications || []);
+                lastFetchedAtRef.current = Date.now();
             } catch (error) {
                 if (!cancelled) {
                     setNotifications([]);
@@ -114,9 +123,15 @@ export function NavBar() {
             }
         };
 
-        fetchStudentHeaderData();
+        const refreshStudentHeader = () => {
+            void fetchStudentHeaderData(true);
+        };
+
+        void fetchStudentHeaderData(false);
+        window.addEventListener('student-header-refresh', refreshStudentHeader);
         return () => {
             cancelled = true;
+            window.removeEventListener('student-header-refresh', refreshStudentHeader);
         };
     }, [isLogin, isStudent, pathname]);
 

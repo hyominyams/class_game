@@ -18,6 +18,7 @@
 | 카테고리 | `ENGLISH` | 게임 목록 필터/카드 표시용 |
 | 문제 타입 | `multiple_choice` / `flexible_answer` / 신규 | `app/actions/game-data.ts` 매핑 필수 |
 | CSV 계약 | 컬럼/검증 규칙 | `docs/question-csv-contract.md` 갱신 필수 |
+| AI 문제생성 정책 | 지원/미지원, 한도, 기본 주제 | `app/actions/question-ai.ts`, `lib/questions/ai-config.ts` 반영 필수 |
 | 점수/보상 규칙 | 점수 계산, `metadata` 필드 | `saveGameResult` 연동 계약 정의 |
 | 대회 지원 여부 | practice+tournament 지원 여부 | 대회 지원 시 3회 제한/최고점 집계 준수 |
 
@@ -121,7 +122,35 @@
 - 작업:
   - 컬럼, 타입, 검증 규칙, 예시를 신규 게임 항목으로 추가
 
-### Phase E. 점수/코인/집계 연동
+### Phase E. AI 문제생성 버튼 연동(신규, 권장 기본 적용)
+1. 서버 액션 매핑/검증
+- 파일:
+  - `app/actions/question-ai.ts`
+  - `lib/questions/ai-config.ts`
+- 작업:
+  - 신규 게임 AI 지원 여부를 명시하고, 지원 시 출력 스키마를 게임 입력 모델과 일치시킴
+  - `getQuestionLimitForGame(gameId)`, `getDefaultTopicForGame(gameId)` 정책 반영
+  - `requireActor(["teacher","admin"])` 경로 유지
+  - `OPENAI_API_KEY` 누락/모델 응답 이상/JSON 오류/중복/난이도 분포 오류 처리 확인
+
+2. 모달 UI/상태 연동
+- 파일:
+  - `components/teacher/ai-question-generate-panel.tsx`
+  - `components/teacher/<new-game>-set-modal.tsx`
+- 작업:
+  - `AI자동생성` 패널 렌더링
+  - `aiLoading` 상태와 저장 버튼 disable 동기화
+  - 생성 결과를 모달 로컬 상태로 매핑 후 기존 저장 경로(`createQuestionSet`/`updateQuestionSet`) 재사용
+  - CSV 업로드/수동 입력과 충돌 없는지 확인
+
+3. 역할/페이지 검증
+- 파일:
+  - `app/teacher/questions/page.tsx`
+  - `app/admin/questions/page.tsx`
+- 작업:
+  - teacher/admin 모두 AI 생성 + 저장 가능
+  - student는 서버 액션 권한으로 차단
+### Phase F. 점수/코인/집계 연동
 1. 게임 결과 저장 계약 정의
 - 파일: `app/actions/game.ts` + 신규 게임 컴포넌트
 - 작업:
@@ -162,7 +191,7 @@
   - 신규 게임 관련 배지 조건이 필요하면 추가
   - 기존 조건이 신규 게임 추가로 의도치 않게 깨지지 않는지 확인
 
-### Phase F. 보안/RBAC/RLS
+### Phase G. 보안/RBAC/RLS
 1. 경로 권한
 - `/student/*`, `/teacher/*`, `/admin/*`는 기존 middleware 범위 내에서 동작
 - 신규 라우트가 해당 prefix 밖으로 새지 않도록 확인
@@ -196,6 +225,9 @@
 - [ ] `components/teacher/question-set-manager.tsx` 모달 라우팅 추가
 - [ ] `components/teacher/<new-game>-set-modal.tsx` 생성
 - [ ] `components/teacher/question-csv-utils.ts` 파서/템플릿 추가
+- [ ] `app/actions/question-ai.ts` 출력 스키마/검증 분기 추가(지원 시)
+- [ ] `lib/questions/ai-config.ts` 게임별 한도/기본주제 정책 반영
+- [ ] `components/teacher/ai-question-generate-panel.tsx` + 모달 `handleAiGenerate` 연동
 - [ ] `app/teacher/questions/page.tsx` / `app/admin/questions/page.tsx` 노출 확인
 - [ ] `docs/question-csv-contract.md` 계약 업데이트
 
@@ -224,6 +256,8 @@
 3. 교사/관리자 출제
 - [ ] `/teacher/questions`에서 CSV 업로드로 생성/수정/활성화 가능
 - [ ] `/admin/questions`에서 동일 플로우 가능
+- [ ] teacher/admin에서 `AI자동생성` 클릭 후 생성 결과 저장 가능
+- [ ] `OPENAI_API_KEY` 누락/잘못된 응답에서 명확한 오류 메시지 확인
 
 4. 대회
 - [ ] 대회 모드 시작 시 해당 대회 문제세트 로드
@@ -236,6 +270,11 @@
 - [ ] 상점 구매 성공/잔액부족 실패 시 원장/잔액/아이템 반영이 원자적으로 일치
 - [ ] `GAME_REWARD:<gameId>` reason이 주간/월간 랭킹 집계에서 누락되지 않음
 - [ ] 랭킹/대시보드에서 신규 게임 로그가 정상 표기
+
+6. AI 생성 회귀
+- [ ] AI 생성 후 수동 수정 -> 저장 정상
+- [ ] AI 생성 후 CSV 재업로드 -> 상태 꼬임 없음
+- [ ] 요청 난이도 분포와 생성 결과 분포가 일치
 
 ## 5. 권장 검증 명령
 ```bash
@@ -269,5 +308,6 @@ select tournament_id, user_id, score, play_time from public.tournament_logs orde
 - 학생 게임 목록, 대회 라벨, 대시보드 라벨에 하드코딩 지점이 남아 있다. 신규 게임 추가 시 한 군데만 수정하면 누락이 발생한다.
 - 문제 타입 분기는 `app/actions/game-data.ts`가 핵심 단일 지점이다. 이 매핑 누락 시 생성은 되더라도 조회/수정이 깨진다.
 - CSV는 모든 게임에서 필수다. 신규 게임 모달에 업로드/다운로드가 빠지면 운영 정책 위반이다.
+- AI 생성은 teacher/admin 전용 서버 액션이어야 한다. 클라이언트 직접 모델 호출은 금지한다.
 - 랭킹 집계는 reason 기반 필터를 사용한다. 보상 reason 규칙(`GAME_REWARD:<gameId>`)을 벗어나면 주간/월간 랭킹에서 누락된다.
 - 인코딩 정책은 UTF-8(무BOM) 기준이다. 커밋 전 `npm run check:utf8`를 반드시 통과해야 한다.

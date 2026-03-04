@@ -1,4 +1,5 @@
 ---
+trigger: model_decision
 description: Bulk Create Student Modal Component Implementation
 globs: components/teacher/bulk-create-student-modal.tsx
 ---

@@ -13,6 +13,12 @@ type StudentNotification = {
     href: string
 }
 
+type RankMovementSnapshot = {
+    currentRank: number
+    previousRank: number
+    rankChangedAt: string
+}
+
 function isManualGrantReason(reason: string) {
     if (reason.startsWith('TEACHER_GRANT:') || reason.startsWith('ADMIN_GRANT:')) return true
     if (reason.startsWith('PURCHASE:')) return false
@@ -43,6 +49,60 @@ function toIso(value: string | null | undefined, fallbackIso: string) {
     return date.toISOString()
 }
 
+async function getRankMovementFallback(
+    adminClient: ReturnType<typeof createAdminClient>,
+    actorUserId: string,
+    grade: number,
+    classNum: number,
+    rankingWindowStartIso: string,
+    nowIso: string,
+): Promise<RankMovementSnapshot | null> {
+    const { data: classmates } = await adminClient
+        .from('profiles')
+        .select('id')
+        .eq('role', 'student')
+        .eq('grade', grade)
+        .eq('class', classNum)
+
+    const classmateIds = (classmates || []).map((item) => item.id)
+    if (classmateIds.length === 0) return null
+
+    const { data: rankingTransactions } = await adminClient
+        .from('coin_transactions')
+        .select('user_id, amount, reason, created_at')
+        .in('user_id', classmateIds)
+        .gt('amount', 0)
+        .order('created_at', { ascending: false })
+        .range(0, 9999)
+
+    const pointsNow: Record<string, number> = {}
+    const pointsBefore: Record<string, number> = {}
+    for (const id of classmateIds) {
+        pointsNow[id] = 0
+        pointsBefore[id] = 0
+    }
+
+    let rankChangedAt: string | null = null
+    for (const tx of rankingTransactions || []) {
+        if (!isRankingEligibleReason(tx.reason)) continue
+
+        pointsNow[tx.user_id] = (pointsNow[tx.user_id] || 0) + (tx.amount || 0)
+
+        const createdAtIso = toIso(tx.created_at, nowIso)
+        if (createdAtIso < rankingWindowStartIso) {
+            pointsBefore[tx.user_id] = (pointsBefore[tx.user_id] || 0) + (tx.amount || 0)
+        } else if (!rankChangedAt || createdAtIso > rankChangedAt) {
+            rankChangedAt = createdAtIso
+        }
+    }
+
+    return {
+        currentRank: computeRank(pointsNow, classmateIds, actorUserId),
+        previousRank: computeRank(pointsBefore, classmateIds, actorUserId),
+        rankChangedAt: rankChangedAt || nowIso,
+    }
+}
+
 export async function getStudentNotificationsAction(limit = 8) {
     const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 30) : 8
 
@@ -51,7 +111,7 @@ export async function getStudentNotificationsAction(limit = 8) {
         return { notifications: [] as StudentNotification[], unreadCount: 0 }
     }
 
-    const { actor } = actorResult
+    const { actor, supabase } = actorResult
     const adminClient = createAdminClient()
 
     const nowIso = new Date().toISOString()
@@ -87,61 +147,59 @@ export async function getStudentNotificationsAction(limit = 8) {
 
     const rankingNotifications: StudentNotification[] = []
     if (actor.grade !== null && actor.classNum !== null) {
-        const { data: classmates } = await adminClient
-            .from('profiles')
-            .select('id')
-            .eq('role', 'student')
-            .eq('grade', actor.grade)
-            .eq('class', actor.classNum)
+        let snapshot: RankMovementSnapshot | null = null
 
-        const classmateIds = (classmates || []).map((item) => item.id)
-        if (classmateIds.length > 0) {
-            const { data: rankingTransactions } = await adminClient
-                .from('coin_transactions')
-                .select('user_id, amount, reason, created_at')
-                .in('user_id', classmateIds)
-                .gt('amount', 0)
-                .order('created_at', { ascending: false })
-                .range(0, 9999)
+        const { data: rankSnapshot, error: rankSnapshotError } = await (supabase as any)
+            .rpc('get_student_rank_movement_snapshot', {
+                p_user_id: actor.userId,
+                p_grade: actor.grade,
+                p_class: actor.classNum,
+                p_window_start: rankingWindowStartIso,
+            })
+            .maybeSingle()
 
-            const pointsNow: Record<string, number> = {}
-            const pointsBefore: Record<string, number> = {}
-            for (const id of classmateIds) {
-                pointsNow[id] = 0
-                pointsBefore[id] = 0
+        if (rankSnapshotError) {
+            console.error('Failed to fetch rank movement snapshot, fallback to transaction-based ranking:', rankSnapshotError)
+            snapshot = await getRankMovementFallback(
+                adminClient,
+                actor.userId,
+                actor.grade,
+                actor.classNum,
+                rankingWindowStartIso,
+                nowIso,
+            )
+        } else {
+            snapshot = {
+                currentRank: Number((rankSnapshot as { current_rank?: number | null } | null)?.current_rank || 0),
+                previousRank: Number((rankSnapshot as { previous_rank?: number | null } | null)?.previous_rank || 0),
+                rankChangedAt: toIso((rankSnapshot as { rank_changed_at?: string | null } | null)?.rank_changed_at, nowIso),
             }
 
-            let rankChangedAt: string | null = null
-            for (const tx of rankingTransactions || []) {
-                if (!isRankingEligibleReason(tx.reason)) continue
-
-                pointsNow[tx.user_id] = (pointsNow[tx.user_id] || 0) + (tx.amount || 0)
-
-                const createdAtIso = toIso(tx.created_at, nowIso)
-                if (createdAtIso < rankingWindowStartIso) {
-                    pointsBefore[tx.user_id] = (pointsBefore[tx.user_id] || 0) + (tx.amount || 0)
-                } else if (!rankChangedAt || createdAtIso > rankChangedAt) {
-                    rankChangedAt = createdAtIso
-                }
+            if (snapshot.currentRank <= 0 || snapshot.previousRank <= 0) {
+                snapshot = await getRankMovementFallback(
+                    adminClient,
+                    actor.userId,
+                    actor.grade,
+                    actor.classNum,
+                    rankingWindowStartIso,
+                    nowIso,
+                )
             }
+        }
 
-            const currentRank = computeRank(pointsNow, classmateIds, actor.userId)
-            const previousRank = computeRank(pointsBefore, classmateIds, actor.userId)
+        if (snapshot && snapshot.currentRank > 0 && snapshot.previousRank > 0 && snapshot.currentRank !== snapshot.previousRank) {
+            const movement = snapshot.previousRank - snapshot.currentRank
+            const movedUp = movement > 0
+            const distance = Math.abs(movement)
 
-            if (currentRank > 0 && previousRank > 0 && currentRank !== previousRank) {
-                const movement = previousRank - currentRank
-                const movedUp = movement > 0
-                const distance = Math.abs(movement)
-
-                rankingNotifications.push({
-                    id: `rank-change-${rankChangedAt || nowIso}`,
-                    type: movedUp ? 'rank_up' : 'rank_down',
-                    title: movedUp ? '랭킹 상승' : '랭킹 하락',
-                    description: `최근 24시간 기준 ${distance}위 ${movedUp ? '상승' : '하락'} (현재 ${currentRank}위)`,
-                    createdAt: rankChangedAt || nowIso,
-                    href: '/student/ranking',
-                })
-            }
+            rankingNotifications.push({
+                id: `rank-change-${snapshot.rankChangedAt}`,
+                type: movedUp ? 'rank_up' : 'rank_down',
+                title: movedUp ? '랭킹 상승' : '랭킹 하락',
+                description: `최근 24시간 기준 ${distance}계단 ${movedUp ? '상승' : '하락'} (현재 ${snapshot.currentRank}위)`,
+                createdAt: snapshot.rankChangedAt,
+                href: '/student/ranking',
+            })
         }
     }
 
