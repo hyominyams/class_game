@@ -64,19 +64,19 @@ export default async function StudentDashboard() {
     const studentTitle = equippedTitleObj ? equippedTitleObj.name : (highestTitle ? highestTitle.name : "견습 기사");
 
     return (
-        <div className="space-y-6 pt-2 md:pt-3">
+        <div className="space-y-5 pt-2 md:space-y-6 md:pt-3">
             <WeeklyRewardModalWrapper result={settlementResult} />
 
             <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
                 <div>
-                    <h1 className="font-pixel text-2xl font-bold leading-tight md:text-3xl">
+                    <h1 className="font-pixel text-xl font-bold leading-tight sm:text-2xl md:text-3xl">
                         반가워요, <span className="text-[#ff2e63]">{profile?.nickname || "학생"}</span>!
                     </h1>
                     <p className="mt-1 font-bold text-gray-500">오늘도 즐겁게 학습 게임을 시작해볼까요?</p>
                 </div>
-                <div className="flex flex-col items-end gap-4 md:flex-row">
+                <div className="flex w-full flex-col gap-3 sm:gap-4 md:w-auto md:flex-row md:items-end">
                     <DailyCoinTracker />
-                    <div className="flex items-center gap-2 rounded-lg border-4 border-black bg-[#fbbf24] px-4 py-2 shadow-[4px_4px_0_0_black]">
+                    <div className="flex w-full items-center justify-center gap-2 rounded-lg border-4 border-black bg-[#fbbf24] px-4 py-2 shadow-[4px_4px_0_0_black] md:w-auto">
                         <span className="text-xl">🪙</span>
                         <span className="font-pixel text-lg font-bold">{(profile?.coin_balance || 0).toLocaleString()}</span>
                     </div>
@@ -98,7 +98,7 @@ export default async function StudentDashboard() {
 
                     <Link href="/student/game" className="group relative block cursor-pointer hover:no-underline">
                         <div className="absolute inset-0 translate-x-2 translate-y-2 rounded-lg bg-black transition-transform group-hover:translate-x-3 group-hover:translate-y-3" />
-                        <div className="relative flex items-center justify-between overflow-hidden rounded-lg border-4 border-black bg-[#b2c4ff] p-6 transition-transform group-hover:-translate-y-1 md:p-8">
+                        <div className="relative flex items-center justify-between overflow-hidden rounded-lg border-4 border-black bg-[#b2c4ff] p-4 transition-transform group-hover:-translate-y-1 sm:p-6 md:p-8">
                             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/pixel-weave.png')] opacity-10" />
                             <div className="relative z-10">
                                 <span className="mb-2 inline-block rounded border-2 border-black bg-[#ff2e63] px-2 py-1 text-xs font-bold text-white shadow-[2px_2px_0_0_black]">
@@ -141,14 +141,14 @@ export default async function StudentDashboard() {
                                 (activities as Activity[]).map((activity) => (
                                     <div
                                         key={activity.id}
-                                        className="flex cursor-default items-center justify-between rounded-lg border-2 border-black bg-white p-3 shadow-[2px_2px_0_0_rgba(0,0,0,0.1)] transition-all hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_black]"
+                                        className="flex cursor-default items-center justify-between gap-2 rounded-lg border-2 border-black bg-white p-3 shadow-[2px_2px_0_0_rgba(0,0,0,0.1)] transition-all hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_black]"
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="flex h-10 w-10 items-center justify-center rounded border-2 border-black bg-[#e0fafa] text-lg font-bold shadow-[1px_1px_0_0_black]">
                                                 ⭐
                                             </div>
                                             <div>
-                                                <h3 className="w-32 truncate text-sm font-bold uppercase leading-tight">
+                                                <h3 className="w-28 truncate text-sm font-bold uppercase leading-tight sm:w-32">
                                                     {GAME_LABELS[String(activity.game_id ?? "")] || String(activity.game_id ?? "UNKNOWN")}
                                                 </h3>
                                                 <p className="text-[10px] font-bold text-gray-400">

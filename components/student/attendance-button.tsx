@@ -39,7 +39,7 @@ export function AttendanceButton() {
     if (canAttend === null) return null;
 
     return (
-        <div className="bg-white border-4 border-black p-4 rounded-lg shadow-[4px_4px_0_0_black] flex flex-col items-center gap-3">
+        <div className="flex w-full flex-col items-center gap-3 rounded-lg border-4 border-black bg-white p-3 text-center shadow-[4px_4px_0_0_black] sm:p-4">
             <div className="flex items-center gap-2">
                 <span className="text-2xl">📅</span>
                 <span className="font-pixel text-lg font-bold">오늘의 출석 체크</span>

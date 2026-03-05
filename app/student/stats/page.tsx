@@ -6,21 +6,20 @@ import { Calendar, Check, Loader2, Lock } from "lucide-react";
 import { getStudentStatsData, equipBadgeAction } from "@/app/actions/stats";
 import { Badge } from "@/app/constants/badges";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 // Fallback Accordion
 const SimpleAccordion = ({ title, children, defaultOpen = false }: { title: React.ReactNode, children: React.ReactNode, defaultOpen?: boolean }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     return (
-        <div className="border-4 border-black rounded-lg overflow-hidden mb-8 shadow-[4px_4px_0_0_black]">
+        <div className="mb-8 overflow-hidden rounded-lg border-4 border-black shadow-[4px_4px_0_0_black]">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between p-4 bg-gray-100 hover:bg-gray-200 font-pixel font-bold text-lg transition-colors border-b-4 border-black"
+                className="flex w-full items-center justify-between border-b-4 border-black bg-gray-100 p-3 font-pixel text-base font-bold transition-colors hover:bg-gray-200 sm:p-4 sm:text-lg"
             >
                 {title}
                 <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
-            {isOpen && <div className="p-6 bg-white">{children}</div>}
+            {isOpen && <div className="bg-white p-4 sm:p-6">{children}</div>}
         </div>
     );
 };
@@ -91,7 +90,7 @@ export default function StatsPage() {
 
     return (
         <div className="space-y-8">
-            <header className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4">
+            <header className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
                 <div>
                     <h1 className="font-pixel text-3xl font-bold mb-2">나의 학습 기록</h1>
                     <p className="text-gray-600 font-bold">
@@ -99,7 +98,7 @@ export default function StatsPage() {
                     </p>
                 </div>
                 {equippedBadge && (
-                    <div className="flex items-center gap-3 bg-yellow-50 px-4 py-2 border-4 border-yellow-400 rounded-lg shadow-[4px_4px_0_0_#ca8a04]">
+                    <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border-4 border-yellow-400 bg-yellow-50 px-3 py-2 shadow-[4px_4px_0_0_#ca8a04] sm:w-auto sm:gap-3 sm:px-4">
                         <span className="text-yellow-700 font-bold text-xs uppercase tracking-wide">Equipped</span>
                         <div className="flex items-center gap-2">
                             <span className="text-2xl filter drop-shadow-md">{equippedBadge.icon}</span>
@@ -110,16 +109,16 @@ export default function StatsPage() {
             </header>
 
             {/* Summary Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
                 {[
                     { label: "총 플레이", value: `${stats.totalPlays.toLocaleString()}회`, color: "bg-blue-100" },
                     { label: "획득 뱃지", value: `${badges.filter(b => b.obtained).length}개`, color: "bg-yellow-100" },
                     { label: "평균 점수", value: `${stats.avgScore}점`, color: "bg-green-100" },
                     { label: "누적 코인", value: (profile?.coin_balance || 0).toLocaleString(), color: "bg-pink-100" },
                 ].map((stat, i) => (
-                    <PixelCard key={i} className={`${stat.color} border-black text-center py-4`}>
-                        <p className="text-sm font-bold text-gray-600 mb-1">{stat.label}</p>
-                        <p className="font-pixel text-2xl font-bold">{stat.value}</p>
+                    <PixelCard key={i} className={`${stat.color} border-black py-3 text-center sm:py-4`}>
+                        <p className="mb-1 text-xs font-bold text-gray-600 sm:text-sm">{stat.label}</p>
+                        <p className="font-pixel text-xl font-bold sm:text-2xl">{stat.value}</p>
                     </PixelCard>
                 ))}
             </div>
@@ -135,7 +134,7 @@ export default function StatsPage() {
                     }
                     defaultOpen={true}
                 >
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
                         {badges.map((badge) => (
                             <div
                                 key={badge.id}
@@ -147,7 +146,7 @@ export default function StatsPage() {
                                 onClick={() => badge.obtained && handleEquip(badge.id)}
                             >
                                 <PixelCard className={cn(
-                                    "text-center h-full flex flex-col items-center justify-center p-4 transition-all relative overflow-hidden min-h-[140px]",
+                                    "relative flex h-full min-h-[132px] flex-col items-center justify-center overflow-hidden p-3 text-center transition-all sm:min-h-[140px] sm:p-4",
                                     badge.obtained ? "hover:-translate-y-1 hover:shadow-[4px_4px_0_0_black]" : "",
                                     badge.isEquipped ? "border-yellow-400 bg-yellow-50 shadow-[0_0_0_2px_#fbbf24] ring-2 ring-yellow-400 ring-offset-2" : ""
                                 )}>
@@ -157,7 +156,7 @@ export default function StatsPage() {
                                         </div>
                                     )}
 
-                                    <div className="text-4xl mb-3 transform transition-transform group-hover:scale-110">
+                                    <div className="mb-3 transform text-3xl transition-transform group-hover:scale-110 sm:text-4xl">
                                         {badge.icon}
                                     </div>
                                     <h3 className="font-pixel text-sm font-bold mb-1 truncate w-full">{badge.name}</h3>
@@ -202,15 +201,15 @@ export default function StatsPage() {
                 </div>
 
                 {recentLogs.length === 0 ? (
-                    <div className="bg-white border-4 border-dashed border-gray-200 rounded-lg p-10 text-center text-gray-400 font-bold">
+                    <div className="rounded-lg border-4 border-dashed border-gray-200 bg-white p-6 text-center font-bold text-gray-400 sm:p-10">
                         <p className="text-2xl mb-2">🏜️</p>
                         아직 플레이 기록이 없습니다.
                     </div>
                 ) : (
                     <div className="bg-white border-4 border-black rounded-lg divide-y-2 divide-black shadow-[4px_4px_0_0_black]">
                         {recentLogs.map((log, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors cursor-default group">
-                                <div className="flex items-center gap-4">
+                            <div key={idx} className="group flex cursor-default flex-col items-start justify-between gap-3 p-4 transition-colors hover:bg-gray-50 sm:flex-row sm:items-center">
+                                <div className="flex items-center gap-3 sm:gap-4">
                                     <div className="w-10 h-10 bg-gray-100 border-2 border-black rounded flex items-center justify-center text-lg shadow-[2px_2px_0_0_black] group-hover:translate-x-1 transition-transform">
                                         🎮
                                     </div>
@@ -221,7 +220,7 @@ export default function StatsPage() {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="text-right">
+                                <div className="w-full text-right sm:w-auto">
                                     {(log.metadata?.status === 'CLEARED') || (!log.metadata?.status && log.score >= 100) ? (
                                         <span className="bg-[#00b894] text-white text-[10px] px-2 py-0.5 rounded border border-black font-pixel shadow-[1px_1px_0_0_black] mr-2">
                                             Clear!

@@ -2,7 +2,6 @@
 
 import React from "react";
 import { PixelModal } from "@/components/ui/pixel-modal";
-import { PixelButton } from "@/components/ui/pixel-button";
 import { Trophy, Gamepad2, Lock } from "lucide-react";
 
 interface GameModeModalProps {
@@ -24,31 +23,31 @@ export function GameModeModal({
 }: GameModeModalProps) {
     return (
         <PixelModal isOpen={isOpen} onClose={onClose} title="게임 모드 선택">
-            <div className="text-center mb-8">
-                <div className="inline-block relative mb-4">
+            <div className="mb-6 text-center sm:mb-8">
+                <div className="relative mb-4 inline-block">
                     <div className="absolute inset-0 bg-black translate-x-[4px] translate-y-[4px] rounded-lg"></div>
-                    <div className="relative bg-[#3b82f6] border-4 border-black px-8 py-3 rounded-lg">
-                        <h3 className="font-pixel text-2xl text-white tracking-wider flex items-center gap-3">
-                            <Gamepad2 className="w-6 h-6" />
+                    <div className="relative rounded-lg border-4 border-black bg-[#3b82f6] px-4 py-3 sm:px-8">
+                        <h3 className="flex items-center gap-2 font-pixel text-lg tracking-wider text-white sm:gap-3 sm:text-2xl">
+                            <Gamepad2 className="h-5 w-5 sm:h-6 sm:w-6" />
                             {gameTitle}
                         </h3>
                     </div>
                 </div>
-                <p className="text-[#18181b]/60 font-bold text-sm flex items-center justify-center gap-2">
+                <p className="flex items-center justify-center gap-2 text-xs font-bold text-[#18181b]/60 sm:text-sm">
                     <span className="w-8 h-px bg-gray-300"></span>
                     플레이할 모드를 선택해주세요
                     <span className="w-8 h-px bg-gray-300"></span>
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2">
                 {/* Practice Mode */}
                 <button
                     onClick={() => onSelectMode("practice")}
-                    className="relative group bg-white border-4 border-black p-4 rounded-lg hover:bg-blue-50 transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0_0_black]"
+                    className="group relative rounded-lg border-4 border-black bg-white p-3 transition-all hover:-translate-y-1 hover:bg-blue-50 hover:shadow-[4px_4px_0_0_black] sm:p-4"
                 >
-                    <div className="w-12 h-12 bg-[#b2c4ff] border-2 border-black rounded-full flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0_0_black]">
-                        <Gamepad2 className="w-6 h-6 text-black" />
+                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border-2 border-black bg-[#b2c4ff] shadow-[2px_2px_0_0_black] sm:h-12 sm:w-12">
+                        <Gamepad2 className="h-5 w-5 text-black sm:h-6 sm:w-6" />
                     </div>
                     <h4 className="font-pixel font-bold mb-1">연습 모드</h4>
                     <p className="text-xs text-gray-500 font-bold mb-2">무제한 플레이</p>
@@ -61,7 +60,7 @@ export function GameModeModal({
                 <button
                     onClick={() => tournamentActive && remainingAttempts > 0 ? onSelectMode("tournament") : null}
                     disabled={!tournamentActive || remainingAttempts <= 0}
-                    className={`relative group border-4 border-black p-4 rounded-lg transition-all 
+                    className={`relative group rounded-lg border-4 border-black p-3 transition-all sm:p-4 
                         ${!tournamentActive
                             ? "bg-gray-100 opacity-70 cursor-not-allowed border-gray-400"
                             : "bg-[#fffbeb] hover:bg-[#fff0c2] hover:-translate-y-1 hover:shadow-[4px_4px_0_0_black] cursor-pointer"
@@ -75,9 +74,9 @@ export function GameModeModal({
                         </div>
                     )}
 
-                    <div className={`w-12 h-12 border-2 border-black rounded-full flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0_0_black]
+                    <div className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border-2 border-black shadow-[2px_2px_0_0_black] sm:h-12 sm:w-12
                         ${tournamentActive ? "bg-[#fbbf24]" : "bg-gray-300"}`}>
-                        <Trophy className="w-6 h-6 text-black" />
+                        <Trophy className="h-5 w-5 text-black sm:h-6 sm:w-6" />
                     </div>
                     <h4 className="font-pixel font-bold mb-1">대회 모드</h4>
                     <p className="text-xs text-gray-500 font-bold mb-2">랭킹 반영 (1일 3회)</p>

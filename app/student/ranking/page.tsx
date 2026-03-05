@@ -82,13 +82,13 @@ export default function RankingPage() {
             </header>
 
             {/* Tabs Container */}
-            <div className="flex items-end px-2 -mb-[4px] relative z-10 space-x-1 overflow-x-auto scrollbar-hide">
+            <div className="relative z-10 -mb-[4px] flex items-end space-x-1 overflow-x-auto px-1 sm:px-2 scrollbar-hide">
                 {RANKING_TABS.map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={cn(
-                            "px-4 md:px-6 py-2 font-pixel text-xs md:text-sm border-t-4 border-x-4 border-black rounded-t-lg transition-all flex items-center justify-center whitespace-nowrap",
+                            "flex items-center justify-center whitespace-nowrap rounded-t-lg border-x-4 border-t-4 border-black px-3 py-2 font-pixel text-[10px] transition-all sm:px-4 sm:text-xs md:px-6 md:text-sm",
                             activeTab === tab.id
                                 ? `${tab.color} text-white h-12 translate-y-0 shadow-[inset_0_-4px_0_0_rgba(0,0,0,0.2)]`
                                 : "bg-[#e5e5e5] text-gray-500 h-10 hover:h-12 hover:bg-white hover:text-black border-b-4 active:h-10 transition-all duration-200"
@@ -100,7 +100,7 @@ export default function RankingPage() {
             </div>
 
             {/* List Content */}
-            <div className="bg-white border-4 border-black rounded-lg p-6 shadow-[8px_8px_0_0_black] relative z-0 !mt-0 min-h-[400px]">
+            <div className="relative z-0 !mt-0 min-h-[380px] rounded-lg border-4 border-black bg-white p-4 shadow-[8px_8px_0_0_black] sm:min-h-[400px] sm:p-6">
                 {/* Game Selection for GAME_SCORE tab */}
                 {activeTab === "GAME_SCORE" && availableGames.length > 0 && (
                     <div className="flex gap-2 mb-6 overflow-x-auto py-2 px-1 scrollbar-hide">
@@ -140,7 +140,7 @@ export default function RankingPage() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        <div className="grid grid-cols-[60px_70px_1fr_140px] gap-4 px-4 pb-3 text-sm font-pixel font-bold text-gray-400 border-b-4 border-black/5">
+                        <div className="hidden border-b-4 border-black/5 px-4 pb-3 text-sm font-pixel font-bold text-gray-400 md:grid md:grid-cols-[60px_70px_1fr_140px] md:gap-4">
                             <div className="text-center">순위</div>
                             <div className="text-center">{activeTab === "TOURNAMENT" ? "티어" : "아바타"}</div>
                             <div>닉네임</div>
@@ -153,14 +153,14 @@ export default function RankingPage() {
                             <div
                                 key={index}
                                 className={cn(
-                                    "grid grid-cols-[60px_70px_1fr_140px] gap-4 items-center p-4 border-4 border-black rounded-xl transition-all hover:translate-x-1 shadow-[4px_4px_0_0_black] hover:shadow-none hover:translate-y-1",
+                                    "grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 rounded-xl border-4 border-black p-3 transition-all shadow-[4px_4px_0_0_black] hover:translate-x-1 hover:translate-y-1 hover:shadow-none sm:p-4 md:grid-cols-[60px_70px_1fr_140px] md:gap-4",
                                     index === 0 ? "bg-yellow-50 border-yellow-400 shadow-yellow-200" :
                                         index === 1 ? "bg-gray-50 border-gray-400 shadow-gray-200" :
                                             index === 2 ? "bg-orange-50 border-orange-400 shadow-orange-200" : "bg-white"
                                 )}
                             >
                                 {/* Rank Column */}
-                                <div className="flex justify-center">
+                                <div className="flex justify-center md:justify-center">
                                     <div className={cn(
                                         "w-10 h-10 flex items-center justify-center font-pixel text-xl font-bold rounded-full border-2 border-black shadow-[2px_2px_0_0_black]",
                                         index === 0 ? "bg-[#fbbf24] text-white" :
@@ -172,13 +172,13 @@ export default function RankingPage() {
                                 </div>
 
                                 {/* Avatar Column */}
-                                <div className="flex justify-center text-3xl">
+                                <div className="flex items-center justify-start text-2xl md:justify-center md:text-3xl">
                                     {user.avatar}
                                 </div>
 
                                 {/* Name & Tier Column */}
-                                <div className="flex flex-col justify-center">
-                                    <h3 className="font-bold text-lg flex items-center gap-2 truncate">
+                                <div className="col-span-2 flex min-w-0 flex-col justify-center md:col-span-1">
+                                    <h3 className="flex items-center gap-2 truncate text-base font-bold sm:text-lg">
                                         {user.name}
                                         {user.tier && (
                                             <span className={cn(
@@ -194,7 +194,7 @@ export default function RankingPage() {
                                 </div>
 
                                 {/* Points Column */}
-                                <div className="text-right">
+                                <div className="col-span-2 text-right md:col-span-1">
                                     <p className="font-pixel font-bold text-lg">
                                         {user.points.toLocaleString()} {activeTab === "GAME_SCORE" || activeTab === "TOURNAMENT" ? "pts" : "coins"}
                                     </p>

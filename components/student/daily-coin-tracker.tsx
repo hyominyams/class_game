@@ -32,7 +32,7 @@ export function DailyCoinTracker() {
     const isMaxed = progress.current >= progress.limit;
 
     return (
-        <div className="bg-white border-4 border-black px-4 py-2 flex items-center gap-4 min-w-[300px] md:min-w-[360px] shadow-[4px_4px_0_0_black] rounded-lg h-[52px]">
+        <div className="flex h-[50px] w-full max-w-full items-center gap-2 rounded-lg border-4 border-black bg-white px-3 py-2 shadow-[4px_4px_0_0_black] sm:h-[52px] sm:gap-4 sm:px-4 sm:min-w-[300px] md:min-w-[360px]">
             <div className="flex items-center gap-2 shrink-0">
                 <div className="w-6 h-6 rounded-full bg-yellow-400 border-2 border-black flex items-center justify-center">
                     <Coins className="w-4 h-4 text-black" />
@@ -61,7 +61,7 @@ export function DailyCoinTracker() {
                 )}
             </div>
 
-            <div className="shrink-0 text-right min-w-[50px]">
+            <div className="min-w-[44px] shrink-0 text-right sm:min-w-[50px]">
                 <span className="font-pixel text-[10px] font-bold text-gray-600 block leading-none">
                     {progress.current}
                 </span>

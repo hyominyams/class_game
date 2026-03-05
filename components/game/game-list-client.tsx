@@ -98,12 +98,12 @@ export function GameListClient({ activeTournaments, participationMap }: GameList
                 <p className="font-bold text-gray-200">플레이할 학습 게임을 선택하세요.</p>
             </header>
 
-            <div className="flex gap-2 overflow-x-auto pb-2 pt-2 scrollbar-hide">
+            <div className="flex gap-2 overflow-x-auto px-0.5 pb-2 pt-2 sm:px-0 scrollbar-hide">
                 {FILTERS.map((category) => (
                     <button
                         key={category}
                         onClick={() => setFilter(category)}
-                        className={`relative whitespace-nowrap rounded border-4 border-black px-4 py-2 font-pixel text-sm shadow-[2px_2px_0_0_black] transition-all ${filter === category
+                        className={`relative whitespace-nowrap rounded border-4 border-black px-3 py-2 font-pixel text-xs shadow-[2px_2px_0_0_black] transition-all sm:px-4 sm:text-sm ${filter === category
                                 ? "z-10 -translate-y-1 bg-[#ff2e63] text-white shadow-[4px_4px_0_0_black]"
                                 : "bg-white hover:z-10 hover:-translate-y-0.5 hover:bg-gray-100 hover:shadow-[3px_3px_0_0_black]"
                             }`}
@@ -119,16 +119,16 @@ export function GameListClient({ activeTournaments, participationMap }: GameList
                         <PixelCard className="relative h-full overflow-hidden border-black transition-all group-hover:-translate-y-2 group-hover:shadow-[8px_8px_0_0_black] hover:bg-white">
                             <div className={`absolute left-0 top-0 z-0 h-24 w-full ${game.color} opacity-50`} />
 
-                            <div className="relative z-10 flex flex-col items-center pb-4 pt-8 text-center">
-                                <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full border-4 border-black bg-white shadow-[4px_4px_0_0_black]">
-                                    <game.icon size={40} className="text-black" />
+                            <div className="relative z-10 flex flex-col items-center pb-4 pt-6 text-center sm:pt-8">
+                                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border-4 border-black bg-white shadow-[4px_4px_0_0_black] sm:h-20 sm:w-20">
+                                    <game.icon size={32} className="text-black sm:h-10 sm:w-10" />
                                 </div>
 
                                 <PixelBadge variant="outline" className="mb-2 bg-white">
                                     {game.category}
                                 </PixelBadge>
-                                <h3 className="mb-2 font-pixel text-xl font-bold">{game.title}</h3>
-                                <p className="line-clamp-2 px-4 text-sm font-bold text-gray-500">{game.description}</p>
+                                <h3 className="mb-2 font-pixel text-lg font-bold sm:text-xl">{game.title}</h3>
+                                <p className="line-clamp-2 px-3 text-xs font-bold text-gray-500 sm:px-4 sm:text-sm">{game.description}</p>
                             </div>
 
                             {game.isTournament && (

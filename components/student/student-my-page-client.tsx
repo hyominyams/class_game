@@ -95,11 +95,11 @@ export function StudentMyPageClient({ username, initialNickname }: StudentMyPage
     };
 
     return (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-5 lg:grid-cols-2">
             <StudentPixelCard className="group relative !p-0 overflow-hidden border-4 border-black bg-[#fff6da] shadow-[8px_8px_0_0_black] transition-transform hover:-translate-y-1">
                 <div className="absolute inset-x-0 top-0 h-2 bg-[#ff2e63]" />
-                <div className="relative space-y-5 p-6">
-                    <div className="flex items-start justify-between gap-4">
+                <div className="relative space-y-5 p-5 sm:p-6">
+                    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
                         <div>
                             <p className="font-pixel text-xs text-[#ff2e63]">PROFILE</p>
                             <h2 className="mt-1 font-pixel text-2xl font-bold">프로필 설정</h2>
@@ -107,7 +107,7 @@ export function StudentMyPageClient({ username, initialNickname }: StudentMyPage
                                 이름은 고정되며 닉네임만 변경할 수 있습니다.
                             </p>
                         </div>
-                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-md border-2 border-black bg-white text-2xl shadow-[2px_2px_0_0_black]">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-black bg-white text-xl shadow-[2px_2px_0_0_black] sm:h-12 sm:w-12 sm:text-2xl">
                             👤
                         </span>
                     </div>
@@ -161,8 +161,8 @@ export function StudentMyPageClient({ username, initialNickname }: StudentMyPage
 
             <StudentPixelCard className="group relative !p-0 overflow-hidden border-4 border-black bg-[#eef3ff] shadow-[8px_8px_0_0_black] transition-transform hover:-translate-y-1">
                 <div className="absolute inset-x-0 top-0 h-2 bg-[#6c5ce7]" />
-                <div className="relative space-y-5 p-6">
-                    <div className="flex items-start justify-between gap-4">
+                <div className="relative space-y-5 p-5 sm:p-6">
+                    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
                         <div>
                             <p className="font-pixel text-xs text-[#6c5ce7]">SECURITY</p>
                             <h2 className="mt-1 font-pixel text-2xl font-bold">비밀번호 변경</h2>
@@ -170,7 +170,7 @@ export function StudentMyPageClient({ username, initialNickname }: StudentMyPage
                                 비밀번호만 변경 가능합니다.
                             </p>
                         </div>
-                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-md border-2 border-black bg-white text-2xl shadow-[2px_2px_0_0_black]">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-black bg-white text-xl shadow-[2px_2px_0_0_black] sm:h-12 sm:w-12 sm:text-2xl">
                             🔐
                         </span>
                     </div>
