@@ -62,6 +62,16 @@ const GAME_QUESTION_TYPES: Record<string, QuestionType> = {
 };
 
 const DEFAULT_WORD_QUESTION_MODE: WordQuestionMode = "en_to_ko";
+const WORD_CHAIN_MAX_SEGMENT_LENGTH = 24;
+const WORD_CHAIN_MAX_ACCEPTED_ANSWERS = 4;
+const WORD_CHAIN_ALLOWED_TOKEN_REGEX = /^[\p{L}\p{N}]+$/u;
+const WORD_CHAIN_FORBIDDEN_MARK_REGEX = /[.!?,:;()[\]{}"'`~]/;
+const WORD_CHAIN_WHITESPACE_REGEX = /\s/;
+const WORD_PAIR_MAX_ENGLISH_LENGTH = 40;
+const WORD_PAIR_MAX_KOREAN_LENGTH = 50;
+const WORD_PAIR_ALLOWED_ENGLISH_REGEX = /^[A-Za-z0-9][A-Za-z0-9' -]*$/;
+const HISTORY_MAX_QUESTION_LENGTH = 180;
+const HISTORY_MAX_SHORT_ANSWER_LENGTH = 80;
 
 function getQuestionType(gameId: string): QuestionType {
     return GAME_QUESTION_TYPES[gameId] || "multiple_choice";
@@ -97,21 +107,161 @@ function normalizeAcceptedAnswers(value: string[] | string | null | undefined) {
     return [];
 }
 
+function normalizeText(value: unknown) {
+    if (typeof value !== "string") return "";
+    return value.trim();
+}
+
+function normalizeCompactText(value: unknown) {
+    if (typeof value !== "string") return "";
+    return value.trim().replace(/\s+/g, "");
+}
+
+function isWordChainToken(value: string) {
+    if (!value || value.length > WORD_CHAIN_MAX_SEGMENT_LENGTH) {
+        return false;
+    }
+
+    if (WORD_CHAIN_WHITESPACE_REGEX.test(value) || WORD_CHAIN_FORBIDDEN_MARK_REGEX.test(value)) {
+        return false;
+    }
+
+    return WORD_CHAIN_ALLOWED_TOKEN_REGEX.test(value);
+}
+
+function normalizeWordChainAcceptedAnswers(value: string[] | string | null | undefined, answer: string) {
+    const parsed = normalizeAcceptedAnswers(value)
+        .map((item) => normalizeCompactText(item))
+        .filter((item) => isWordChainToken(item));
+
+    const withAnswer = [answer, ...parsed].slice(0, WORD_CHAIN_MAX_ACCEPTED_ANSWERS);
+    const unique = new Set<string>();
+    const result: string[] = [];
+
+    withAnswer.forEach((item) => {
+        const key = item.toLowerCase();
+        if (unique.has(key)) return;
+        unique.add(key);
+        result.push(item);
+    });
+
+    return result.slice(0, WORD_CHAIN_MAX_ACCEPTED_ANSWERS);
+}
+
 function buildMultipleChoiceRows(setId: string, questionsData: QuestionInput[]) {
     const rows: Database["public"]["Tables"]["questions"]["Insert"][] = [];
+    const seenWordPairs = new Set<string>();
+    const seenQuestionTexts = new Set<string>();
 
-    questionsData.forEach((question) => {
+    questionsData.forEach((question, index) => {
         if (!("question_text" in question)) {
             return;
         }
 
+        const rowIndex = index + 1;
+        const questionText = normalizeText(question.question_text);
+        const rawType = normalizeText(question.type || "multiple-choice");
+        const type = rawType === "short-answer" || rawType === "word-pair"
+            ? rawType
+            : "multiple-choice";
+
+        if (!questionText) {
+            throw new Error(`${rowIndex}번 문항의 question_text가 비어 있습니다.`);
+        }
+
+        if (questionText.length > HISTORY_MAX_QUESTION_LENGTH) {
+            throw new Error(`${rowIndex}번 문항의 question_text가 너무 깁니다.`);
+        }
+
+        if (type === "word-pair") {
+            const answerText = normalizeText(question.answer_text);
+            const englishWordCount = answerText.split(/\s+/).filter(Boolean).length;
+
+            if (!answerText) {
+                throw new Error(`${rowIndex}번 단어 문항의 answer_text가 비어 있습니다.`);
+            }
+
+            if (
+                answerText.length > WORD_PAIR_MAX_ENGLISH_LENGTH ||
+                questionText.length > WORD_PAIR_MAX_KOREAN_LENGTH ||
+                englishWordCount < 1 ||
+                englishWordCount > 3 ||
+                !WORD_PAIR_ALLOWED_ENGLISH_REGEX.test(answerText) ||
+                /[.!?]/.test(questionText)
+            ) {
+                throw new Error(`${rowIndex}번 단어 문항의 형식이 올바르지 않습니다.`);
+            }
+
+            const key = `${questionText.toLowerCase()}::${answerText.toLowerCase()}`;
+            if (seenWordPairs.has(key)) {
+                throw new Error(`${rowIndex}번 단어 문항이 중복되었습니다.`);
+            }
+
+            seenWordPairs.add(key);
+            rows.push({
+                set_id: setId,
+                question_text: questionText,
+                options: [answerText],
+                correct_answer: 0,
+                answer_text: answerText,
+                type: "word-pair",
+            });
+            return;
+        }
+
+        if (type === "short-answer") {
+            const answerText = normalizeText(question.answer_text);
+            if (!answerText) {
+                throw new Error(`${rowIndex}번 단답형 문항의 answer_text가 비어 있습니다.`);
+            }
+
+            if (answerText.length > HISTORY_MAX_SHORT_ANSWER_LENGTH) {
+                throw new Error(`${rowIndex}번 단답형 문항의 answer_text가 너무 깁니다.`);
+            }
+
+            const key = questionText.toLowerCase();
+            if (seenQuestionTexts.has(key)) {
+                throw new Error(`${rowIndex}번 문항의 question_text가 중복되었습니다.`);
+            }
+
+            seenQuestionTexts.add(key);
+            rows.push({
+                set_id: setId,
+                question_text: questionText,
+                options: [],
+                correct_answer: null,
+                answer_text: answerText,
+                type: "short-answer",
+            });
+            return;
+        }
+
+        const options = Array.isArray(question.options)
+            ? question.options.map((item) => normalizeText(item)).filter(Boolean)
+            : [];
+        const correctAnswer = Number(question.correct_answer);
+
+        if (options.length !== 4) {
+            throw new Error(`${rowIndex}번 객관식 문항의 보기는 4개여야 합니다.`);
+        }
+
+        if (!Number.isInteger(correctAnswer) || correctAnswer < 0 || correctAnswer > 3) {
+            throw new Error(`${rowIndex}번 객관식 문항의 correct_answer가 올바르지 않습니다.`);
+        }
+
+        const key = questionText.toLowerCase();
+        if (seenQuestionTexts.has(key)) {
+            throw new Error(`${rowIndex}번 문항의 question_text가 중복되었습니다.`);
+        }
+
+        seenQuestionTexts.add(key);
         rows.push({
             set_id: setId,
-            question_text: question.question_text,
-            options: Array.isArray(question.options) ? question.options : [],
-            correct_answer: question.correct_answer ?? null,
-            answer_text: question.answer_text ?? null,
-            type: question.type || "multiple-choice",
+            question_text: questionText,
+            options,
+            correct_answer: correctAnswer,
+            answer_text: null,
+            type: "multiple-choice",
         });
     });
 
@@ -120,17 +270,37 @@ function buildMultipleChoiceRows(setId: string, questionsData: QuestionInput[]) 
 
 function buildWordChainRows(setId: string, questionsData: QuestionInput[]) {
     const rows: WordChainQuestionInsert[] = [];
+    const seenPairs = new Set<string>();
 
-    questionsData.forEach((question) => {
+    questionsData.forEach((question, index) => {
         if (!("prompt" in question) || !("answer" in question)) {
             return;
         }
 
+        const rowIndex = index + 1;
+        const prompt = normalizeCompactText(question.prompt);
+        const answer = normalizeCompactText(question.answer);
+
+        if (!isWordChainToken(prompt) || !isWordChainToken(answer)) {
+            throw new Error(`${rowIndex}번 단어 연결 문항의 문제/정답 형식이 올바르지 않습니다.`);
+        }
+
+        const key = `${prompt.toLowerCase()}::${answer.toLowerCase()}`;
+        if (seenPairs.has(key)) {
+            throw new Error(`${rowIndex}번 단어 연결 문항이 중복되었습니다.`);
+        }
+
+        seenPairs.add(key);
+        const acceptedAnswers = normalizeWordChainAcceptedAnswers(question.accepted_answers, answer);
+        if (acceptedAnswers.length === 0) {
+            throw new Error(`${rowIndex}번 단어 연결 문항의 유사정답이 비어 있습니다.`);
+        }
+
         rows.push({
             set_id: setId,
-            prompt: question.prompt,
-            answer: question.answer,
-            accepted_answers: normalizeAcceptedAnswers(question.accepted_answers),
+            prompt,
+            answer,
+            accepted_answers: acceptedAnswers,
         });
     });
 
@@ -193,25 +363,33 @@ async function insertQuestions(
 ) {
     const adminClient = createAdminClient();
 
-    if (questionType === "flexible_answer") {
-        const rows = buildWordChainRows(setId, questionsData);
+    try {
+        if (questionType === "flexible_answer") {
+            const rows = buildWordChainRows(setId, questionsData);
+            if (rows.length === 0) return { error: null };
+
+            const { error } = await adminClient
+                .from("word_chain_questions" as never)
+                .insert(rows as never);
+
+            return { error };
+        }
+
+        const rows = buildMultipleChoiceRows(setId, questionsData);
         if (rows.length === 0) return { error: null };
 
         const { error } = await adminClient
-            .from("word_chain_questions" as never)
-            .insert(rows as never);
+            .from("questions")
+            .insert(rows);
 
         return { error };
+    } catch (error) {
+        return {
+            error: {
+                message: error instanceof Error ? error.message : "Invalid question payload.",
+            },
+        };
     }
-
-    const rows = buildMultipleChoiceRows(setId, questionsData);
-    if (rows.length === 0) return { error: null };
-
-    const { error } = await adminClient
-        .from("questions")
-        .insert(rows);
-
-    return { error };
 }
 
 async function deleteQuestionsByType(questionType: QuestionType, setId: string) {

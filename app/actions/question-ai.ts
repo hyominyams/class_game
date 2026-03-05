@@ -74,6 +74,45 @@ function normalizeDifficulty(value: unknown): keyof DifficultyCounts | null {
     return null;
 }
 
+const WORD_CHAIN_MAX_SEGMENT_LENGTH = 24;
+const WORD_CHAIN_MAX_ACCEPTED_ANSWERS = 4;
+const WORD_CHAIN_ALLOWED_TOKEN_REGEX = /^[\p{L}\p{N}]+$/u;
+const WORD_CHAIN_FORBIDDEN_MARK_REGEX = /[.!?,:;()[\]{}"'`~]/;
+const WORD_CHAIN_WHITESPACE_REGEX = /\s/;
+const WORD_RUNNER_MAX_ENGLISH_LENGTH = 40;
+const WORD_RUNNER_MAX_KOREAN_LENGTH = 50;
+const WORD_RUNNER_ALLOWED_ENGLISH_REGEX = /^[A-Za-z0-9][A-Za-z0-9' -]*$/;
+const HISTORY_MAX_QUESTION_LENGTH = 180;
+const HISTORY_MAX_SHORT_ANSWER_LENGTH = 80;
+
+function normalizeCompactText(value: unknown) {
+    if (typeof value !== "string") return "";
+    return value.trim().replace(/\s+/g, "");
+}
+
+function isWordChainToken(value: string) {
+    if (!value || value.length > WORD_CHAIN_MAX_SEGMENT_LENGTH) {
+        return false;
+    }
+
+    if (WORD_CHAIN_WHITESPACE_REGEX.test(value) || WORD_CHAIN_FORBIDDEN_MARK_REGEX.test(value)) {
+        return false;
+    }
+
+    return WORD_CHAIN_ALLOWED_TOKEN_REGEX.test(value);
+}
+
+function normalizeWordChainAcceptedAnswers(value: unknown, answer: string) {
+    const raw = Array.isArray(value) ? value : [];
+    const normalized = [answer, ...raw.map((item) => normalizeCompactText(item))]
+        .filter((item) => isWordChainToken(item))
+        .slice(0, WORD_CHAIN_MAX_ACCEPTED_ANSWERS);
+
+    return Array.from(new Set(normalized.map((item) => item.toLowerCase())))
+        .map((lowered) => normalized.find((item) => item.toLowerCase() === lowered) || lowered)
+        .slice(0, WORD_CHAIN_MAX_ACCEPTED_ANSWERS);
+}
+
 function parseRequest(input: GenerateQuestionsWithAIInput): ParsedRequest {
     const gameId = normalizeText(input.gameId);
     if (!gameId) {
@@ -217,7 +256,8 @@ async function generateWordRunnerQuestions(request: ParsedRequest): Promise<Word
         "- Return exactly the requested number of questions.",
         "- Match the requested difficulty distribution exactly.",
         "- Keep each english value to a short classroom-safe word or phrase (max 3 words).",
-        "- Provide natural Korean meaning for each english value.",
+        "- Provide natural Korean meaning for each english value (translation only, no explanation sentence).",
+        "- english must use only letters, numbers, apostrophes, hyphens, and spaces.",
         "- No duplicates.",
         "- No political, sexual, hate, violent, or age-inappropriate content.",
     ].join("\n");
@@ -233,8 +273,20 @@ async function generateWordRunnerQuestions(request: ParsedRequest): Promise<Word
             const difficulty = normalizeDifficulty(row.difficulty);
             const english = normalizeText(row.english);
             const korean = normalizeText(row.korean);
+            const englishWordCount = english.split(/\s+/).filter(Boolean).length;
 
             if (!difficulty || !english || !korean) {
+                return null;
+            }
+
+            if (
+                englishWordCount < 1 ||
+                englishWordCount > 3 ||
+                english.length > WORD_RUNNER_MAX_ENGLISH_LENGTH ||
+                korean.length > WORD_RUNNER_MAX_KOREAN_LENGTH ||
+                !WORD_RUNNER_ALLOWED_ENGLISH_REGEX.test(english) ||
+                /[.!?]/.test(korean)
+            ) {
                 return null;
             }
 
@@ -254,7 +306,7 @@ async function generateWordRunnerQuestions(request: ParsedRequest): Promise<Word
 
 async function generateWordChainQuestions(request: ParsedRequest): Promise<WordChainQuestion[]> {
     const systemPrompt = [
-        "You generate safe classroom prompt-answer pairs.",
+        "You generate safe classroom word-chain split pairs.",
         "Return strict JSON only. No markdown.",
     ].join(" ");
 
@@ -266,10 +318,15 @@ async function generateWordChainQuestions(request: ParsedRequest): Promise<WordC
         "Difficulty distribution:",
         buildDifficultyGuide(request.counts),
         "JSON format:",
-        '{"questions":[{"difficulty":"low|medium|high","prompt":"...","answer":"...","acceptedAnswers":["..."]}]}',
+        '{"questions":[{"difficulty":"low|medium|high","fullWord":"...","prompt":"...","answer":"...","acceptedAnswers":["..."]}]}',
         "Rules:",
         "- Return exactly the requested number of questions.",
         "- Match the requested difficulty distribution exactly.",
+        "- fullWord must be one contiguous token (no spaces).",
+        "- prompt must be the leading part of fullWord.",
+        "- answer must be the remaining tail part so fullWord === prompt + answer.",
+        "- prompt and answer must be short token segments, not clue sentences or explanations.",
+        "- prompt and answer must not contain punctuation or whitespace.",
         "- acceptedAnswers must include answer.",
         "- acceptedAnswers length must be 1 to 4.",
         "- No duplicates.",
@@ -285,25 +342,31 @@ async function generateWordChainQuestions(request: ParsedRequest): Promise<WordC
         .map((item) => {
             const row = item as {
                 difficulty?: unknown;
+                fullWord?: unknown;
                 prompt?: unknown;
                 answer?: unknown;
                 acceptedAnswers?: unknown;
             };
 
             const difficulty = normalizeDifficulty(row.difficulty);
-            const prompt = normalizeText(row.prompt);
-            const answer = normalizeText(row.answer);
-
-            const acceptedAnswersRaw = Array.isArray(row.acceptedAnswers) ? row.acceptedAnswers : [];
-            const acceptedAnswers = acceptedAnswersRaw
-                .map((value) => normalizeText(value))
-                .filter(Boolean);
+            const prompt = normalizeCompactText(row.prompt);
+            const answer = normalizeCompactText(row.answer);
+            const fullWord = normalizeCompactText(row.fullWord || `${prompt}${answer}`);
 
             if (!difficulty || !prompt || !answer) {
                 return null;
             }
 
-            const combinedAnswers = Array.from(new Set([answer, ...acceptedAnswers])).slice(0, 4);
+            if (
+                !isWordChainToken(prompt) ||
+                !isWordChainToken(answer) ||
+                !isWordChainToken(fullWord) ||
+                fullWord !== `${prompt}${answer}`
+            ) {
+                return null;
+            }
+
+            const combinedAnswers = normalizeWordChainAcceptedAnswers(row.acceptedAnswers, answer);
             if (combinedAnswers.length === 0) {
                 return null;
             }
@@ -395,6 +458,10 @@ async function generateHistoryQuestions(request: ParsedRequest): Promise<History
                 return null;
             }
 
+            if (text.length > HISTORY_MAX_QUESTION_LENGTH) {
+                return null;
+            }
+
             if (forceMultipleChoice && type !== "multiple-choice") {
                 return null;
             }
@@ -428,7 +495,7 @@ async function generateHistoryQuestions(request: ParsedRequest): Promise<History
             }
 
             const answerText = normalizeText(row.answerText);
-            if (!answerText) {
+            if (!answerText || answerText.length > HISTORY_MAX_SHORT_ANSWER_LENGTH) {
                 return null;
             }
 
